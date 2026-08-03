@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import VideoBackground from '../components/VideoBackground';
+import PageBackground from '../components/PageBackground';
 
 function Home() {
   const { user } = useAuth();
 
   return (
-    <VideoBackground videoSrc="/videos/TFLoop.mp4">
+    <PageBackground>
       <div className="home">
         {!user && (
           <div className="home-hero">
@@ -40,7 +40,7 @@ function Home() {
           </Link>
         </div>
       </div>
-    </VideoBackground>
+    </PageBackground>
   );
 }
 

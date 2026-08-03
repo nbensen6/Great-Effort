@@ -1,4 +1,4 @@
-app = 'iq-lol-team'
+app = 'tge-lol-team'
 primary_region = 'ord'
 
 [build]

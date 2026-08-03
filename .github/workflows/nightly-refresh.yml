@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Refresh all player stats (Roster)
         run: |
-          curl -X POST https://iq-lol-team.fly.dev/api/players/refresh-all \
+          curl -X POST https://tge-lol-team.fly.dev/api/players/refresh-all \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json"
 
@@ -21,7 +21,7 @@ jobs:
 
       - name: Auto-import match stats (Stats page)
         run: |
-          curl -X POST https://iq-lol-team.fly.dev/api/stats/auto-import \
+          curl -X POST https://tge-lol-team.fly.dev/api/stats/auto-import \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json"
 
@@ -30,6 +30,6 @@ jobs:
 
       - name: Scan for practice matches
         run: |
-          curl -X POST https://iq-lol-team.fly.dev/api/practice/scan \
+          curl -X POST https://tge-lol-team.fly.dev/api/practice/scan \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json"

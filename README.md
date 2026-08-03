@@ -2,7 +2,7 @@
 
 A team management website for the Team Great Effort League of Legends team featuring authentication, stats tracking, draft assistance, and team collaboration tools.
 
-Forked from the IQ team hub, and reuses that team's old Fly app name (`iq-lol-team`), which was free — the IQ deployment no longer exists. Data lives on the `tge_data` volume and is entirely this team's.
+Forked from the IQ team hub, and deploys as the Fly app `tge-lol-team`. Data lives on the `tge_data` volume and is entirely this team's.
 
 ## Features
 
@@ -80,7 +80,6 @@ GreatEffort/
 ├── client/                 # React frontend
 │   ├── public/
 │   │   ├── logo.png       # Horizontal lockup (navbar), transparent
-│   │   ├── logo-full.png  # Full square lockup (hero), transparent
 │   │   └── favicon.ico    # Dragon head on dark square
 │   └── src/
 │       ├── components/    # Reusable components

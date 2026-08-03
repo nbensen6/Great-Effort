@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import VideoBackground from '../components/VideoBackground';
+import PageBackground from '../components/PageBackground';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useConfirm } from '../hooks/useConfirm';
 
@@ -81,7 +81,7 @@ function Announcements() {
   if (loading) return <div className="loading">Loading announcements...</div>;
 
   return (
-    <VideoBackground videoSrc="/videos/DragonsLoop.mp4">
+    <PageBackground>
       <div className="announcements-page">
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem'}}>
           <h1>Announcements</h1>
@@ -161,7 +161,7 @@ function Announcements() {
         )}
       </div>
       <ConfirmDialog {...confirmDialogProps} />
-    </VideoBackground>
+    </PageBackground>
   );
 }
 

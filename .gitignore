@@ -35,6 +35,9 @@ coverage/
 *.tmp
 *.temp
 
-# Large video assets (keep small optimized loops)
-Assets/
+# Large video source files at the repo root.
+# Leading slash is required: git sets core.ignorecase=true on Windows, so an
+# unanchored "Assets/" also matched client/src/assets/ and silently excluded
+# the entire stylesheet from the repo.
+/Assets/
 

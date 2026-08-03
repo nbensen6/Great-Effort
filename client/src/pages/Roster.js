@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import VideoBackground from '../components/VideoBackground';
+import PageBackground from '../components/PageBackground';
 import ConfirmDialog from '../components/ConfirmDialog';
 import AlertDialog from '../components/AlertDialog';
 import { useConfirm, useAlert } from '../hooks/useConfirm';
@@ -412,7 +412,7 @@ function Roster() {
   const isAdmin = user?.role === 'admin';
 
   return (
-    <VideoBackground videoSrc="/videos/AhriLoop.mp4">
+    <PageBackground>
       <div className="roster-page">
         <h1 style={{marginBottom: '1.5rem', textAlign: 'center'}}>Team Roster</h1>
 
@@ -1109,7 +1109,7 @@ function Roster() {
       </div>
       <ConfirmDialog {...confirmDialogProps} />
       <AlertDialog {...alertDialogProps} />
-    </VideoBackground>
+    </PageBackground>
   );
 }
 

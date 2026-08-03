@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
 import api from '../services/api';
-import VideoBackground from '../components/VideoBackground';
+import PageBackground from '../components/PageBackground';
 
 function Stats() {
   const [stats, setStats] = useState([]);
@@ -126,7 +126,7 @@ function Stats() {
   if (loading) return <div className="loading">Loading stats...</div>;
 
   return (
-    <VideoBackground videoSrc="/videos/ZaheenLoop.mp4">
+    <PageBackground>
       <div className="stats-page">
         <div className="stats-header">
           <h1>Team Statistics</h1>
@@ -247,7 +247,7 @@ function Stats() {
           )}
         </div>
       </div>
-    </VideoBackground>
+    </PageBackground>
   );
 }
 
