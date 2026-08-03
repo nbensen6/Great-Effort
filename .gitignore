@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+client/build/
+dist/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Database
+server/database/*.db
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+
+# Misc
+*.tmp
+*.temp
+
+# Large video assets (keep small optimized loops)
+Assets/
+

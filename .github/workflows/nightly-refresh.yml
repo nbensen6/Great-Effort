@@ -1,0 +1,35 @@
+name: Scheduled Data Refresh
+
+on:
+  schedule:
+    # Run twice daily: 6 AM and 6 PM UTC
+    - cron: '0 6,18 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refresh all player stats (Roster)
+        run: |
+          curl -X POST https://iq-lol-team.fly.dev/api/players/refresh-all \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json"
+
+      - name: Wait for rate limits
+        run: sleep 30
+
+      - name: Auto-import match stats (Stats page)
+        run: |
+          curl -X POST https://iq-lol-team.fly.dev/api/stats/auto-import \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json"
+
+      - name: Wait for rate limits
+        run: sleep 30
+
+      - name: Scan for practice matches
+        run: |
+          curl -X POST https://iq-lol-team.fly.dev/api/practice/scan \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json"
