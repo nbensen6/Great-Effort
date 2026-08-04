@@ -22,6 +22,10 @@ function Notes() {
   const [storage, setStorage] = useState(null);
 
   const isVideo = (name) => /\.(mp4|webm)$/i.test(name || '');
+  // <video>/<img> cannot send an Authorization header, so the token rides along
+  // in the query string for these requests only.
+  const clipUrl = (filename) =>
+    `/api/notes/clips/file/${filename}?token=${encodeURIComponent(localStorage.getItem('token') || '')}`;
   const formatSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`);
 
   useEffect(() => {
@@ -47,9 +51,9 @@ function Notes() {
     try {
       const form = new FormData();
       form.append('clip', file);
-      const res = await api.post(`/notes/${selectedNote.id}/clips`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // Do not set Content-Type: overriding it drops the multipart boundary the
+      // browser generates, and multer then fails with "Boundary not found".
+      const res = await api.post(`/notes/${selectedNote.id}/clips`, form);
       setClips(prev => [res.data, ...prev]);
       api.get('/notes/clips/storage').then(r => setStorage(r.data)).catch(() => {});
     } catch (err) {
@@ -325,9 +329,9 @@ function Notes() {
                       {clips.map(clip => (
                         <div key={clip.id} className="note-clip-card">
                           {isVideo(clip.filename) ? (
-                            <video src={`/api/notes/clips/file/${clip.filename}`} controls preload="metadata" />
+                            <video src={clipUrl(clip.filename)} controls preload="metadata" />
                           ) : (
-                            <img src={`/api/notes/clips/file/${clip.filename}`} alt={clip.original_name} />
+                            <img src={clipUrl(clip.filename)} alt={clip.original_name} />
                           )}
                           <div className="note-clip-meta">
                             <span title={clip.original_name}>{clip.original_name}</span>

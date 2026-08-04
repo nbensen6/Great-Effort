@@ -3,7 +3,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const db = require('../database/db');
-const { authenticateToken } = require('../middleware/auth');
+const jwt = require('jsonwebtoken');
+const { authenticateToken, JWT_SECRET } = require('../middleware/auth');
 const {
   uploadDir, MAX_UPLOAD_BYTES, enforceStorageBudget, storageStatus
 } = require('../lib/uploads');
@@ -161,8 +162,25 @@ router.post('/champion', authenticateToken, (req, res) => {
 
 // ============= NOTE CLIPS =============
 
-// Serve an uploaded clip. Auth-gated like the rest of the notes API.
-router.get('/clips/file/:filename', authenticateToken, (req, res) => {
+// Serve an uploaded clip.
+//
+// <video src> and <img src> are plain browser requests and cannot carry an
+// Authorization header, so this route also accepts the same JWT as a query
+// parameter. Everything else in the API stays header-only.
+function authenticateMedia(req, res, next) {
+  if (req.headers.authorization) return authenticateToken(req, res, next);
+
+  const token = req.query.token;
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    return next();
+  } catch (e) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
+}
+
+router.get('/clips/file/:filename', authenticateMedia, (req, res) => {
   // Reject anything that could escape the upload directory.
   const name = path.basename(req.params.filename);
   const filepath = path.join(uploadDir, name);
