@@ -70,8 +70,13 @@ router.post('/scan', async (req, res, next) => {
     for (const player of players) {
       const routing = getRouting(player.opgg_region || 'na');
       try {
-        // Only fetch matches starting from Jan 20, 2026 (team start date)
-        const teamStartDate = Math.floor(new Date('2026-01-20T00:00:00Z').getTime() / 1000);
+        // Only look at matches since the team started playing together.
+        const configured = db.prepare('SELECT team_start_date FROM practice_settings WHERE id = 1')
+          .get()?.team_start_date || '2026-01-20';
+        const parsed = new Date(`${configured}T00:00:00Z`).getTime();
+        const teamStartDate = Math.floor(
+          (Number.isNaN(parsed) ? new Date('2026-01-20T00:00:00Z').getTime() : parsed) / 1000
+        );
         const matchIds = await riotFetch(
           `https://${routing}.api.riotgames.com/lol/match/v5/matches/by-puuid/${player.riot_puuid}/ids?count=20&startTime=${teamStartDate}`
         );
@@ -417,12 +422,22 @@ router.get('/settings', authenticateToken, requireAdmin, (req, res) => {
 // PUT /api/practice/settings - Update practice settings
 router.put('/settings', authenticateToken, requireAdmin, (req, res) => {
   try {
-    const { auto_pool_threshold } = req.body;
+    const { auto_pool_threshold, team_start_date } = req.body;
 
     if (auto_pool_threshold !== undefined) {
       const threshold = Math.max(1, Math.min(20, parseInt(auto_pool_threshold)));
       db.prepare('UPDATE practice_settings SET auto_pool_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1')
         .run(threshold);
+    }
+
+    if (team_start_date !== undefined) {
+      // Expect YYYY-MM-DD; reject anything the scan could not parse into a date.
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(team_start_date) ||
+          Number.isNaN(new Date(`${team_start_date}T00:00:00Z`).getTime())) {
+        return res.status(400).json({ error: 'team_start_date must be a valid YYYY-MM-DD date' });
+      }
+      db.prepare('UPDATE practice_settings SET team_start_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1')
+        .run(team_start_date);
     }
 
     const settings = db.prepare('SELECT * FROM practice_settings WHERE id = 1').get();

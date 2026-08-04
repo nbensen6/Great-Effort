@@ -25,17 +25,20 @@ const storage = multer.diskStorage({
   }
 });
 
+const { MAX_UPLOAD_BYTES, enforceStorageBudget, storageStatus } = require('../lib/uploads');
+
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const allowedTypes = /jpeg|jpg|png|gif|webp|mp4|webm/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    // Browsers send video/mp4 and video/webm; the regex matches the subtype.
     const mimetype = allowedTypes.test(file.mimetype);
     if (extname && mimetype) {
       return cb(null, true);
     }
-    cb(new Error('Only image files are allowed'));
+    cb(new Error('Only images (jpg, png, gif, webp) and short clips (mp4, webm) are allowed'));
   }
 });
 
@@ -152,7 +155,7 @@ router.delete('/teams/:id', authenticateToken, (req, res) => {
 });
 
 // Upload team logo
-router.post('/teams/:teamId/logo', authenticateToken, upload.single('logo'), (req, res) => {
+router.post('/teams/:teamId/logo', authenticateToken, upload.single('logo'), enforceStorageBudget, (req, res) => {
   try {
     const { teamId } = req.params;
 
@@ -331,7 +334,7 @@ router.get('/teams/:teamId/images', authenticateToken, (req, res) => {
 });
 
 // Upload image for a team
-router.post('/teams/:teamId/images', authenticateToken, upload.single('image'), (req, res) => {
+router.post('/teams/:teamId/images', authenticateToken, upload.single('image'), enforceStorageBudget, (req, res) => {
   try {
     const { teamId } = req.params;
     const { description } = req.body;
@@ -679,6 +682,11 @@ router.delete('/flowcharts/:id', authenticateToken, (req, res) => {
     console.error('Error deleting flowchart:', error);
     res.status(500).json({ error: 'Failed to delete flowchart' });
   }
+});
+
+// Upload storage usage, so the UI can show how much room is left for clips.
+router.get('/storage', authenticateToken, (req, res) => {
+  res.json(storageStatus());
 });
 
 module.exports = router;

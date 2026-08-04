@@ -131,7 +131,12 @@ function Notes() {
                   onClick={() => handleSelectNote(note)}
                 >
                   <h4>{note.title}</h4>
-                  <small>{note.category} - {formatDate(note.created_at)}</small>
+                  <small>
+                    <span className={`note-author${note.is_mine ? ' mine' : ''}`}>
+                      {note.is_mine ? 'You' : (note.author_name || 'Unknown')}
+                    </span>
+                    {note.category} - {formatDate(note.created_at)}
+                  </small>
                 </div>
               ))
             )}
@@ -184,6 +189,12 @@ function Notes() {
                       </button>
                     </>
                   ) : (
+                    // Everyone can read the team's notes; only the author edits.
+                    selectedNote && selectedNote.is_mine === false ? (
+                      <span className="note-readonly">
+                        {selectedNote.author_name || 'Someone else'}'s note
+                      </span>
+                    ) : (
                     <>
                       <button className="btn btn-secondary btn-small" onClick={() => setIsEditing(true)}>
                         Edit
@@ -192,6 +203,7 @@ function Notes() {
                         Delete
                       </button>
                     </>
+                    )
                   )}
                 </div>
               </div>

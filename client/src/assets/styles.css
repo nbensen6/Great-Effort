@@ -1409,6 +1409,65 @@ tr:hover {
   border-color: var(--riot-red);
 }
 
+/* Practice scan controls (admin only) */
+.practice-admin-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  flex-wrap: wrap;
+}
+
+.practice-admin-row + .practice-admin-row {
+  border-top: 1px solid var(--border-color);
+}
+
+.practice-admin .last-scan {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.practice-admin input[type="date"] {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 0.35rem 0.5rem;
+}
+
+.practice-admin .scan-result {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  border-left: 3px solid var(--riot-red);
+  background: rgba(209, 54, 58, 0.08);
+}
+
+/* Note authorship */
+.note-author {
+  display: inline-block;
+  margin-right: 0.4rem;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 0 0.3rem;
+}
+
+.note-author.mine {
+  color: var(--riot-red);
+  border-color: var(--riot-red);
+}
+
+.note-readonly {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
 /* Account <-> roster card linkage */
 .claim-badge {
   margin-left: 0.5rem;

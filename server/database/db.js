@@ -263,6 +263,13 @@ try {
   db.prepare('INSERT OR IGNORE INTO practice_settings (id) VALUES (1)').run();
 } catch (e) {}
 
+// When the team started playing together. The practice scan only looks at
+// matches after this date, so it must be configurable per team rather than
+// hardcoded to whenever the previous team started.
+try {
+  db.exec(`ALTER TABLE practice_settings ADD COLUMN team_start_date TEXT DEFAULT '2026-01-20'`);
+} catch (e) {}
+
 // Add damage taken column to practice_player_stats
 try {
   db.exec(`ALTER TABLE practice_player_stats ADD COLUMN total_damage_taken INTEGER DEFAULT 0`);

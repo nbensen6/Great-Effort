@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 function Practice() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [settings, setSettings] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState('');
+  const [savingStartDate, setSavingStartDate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [playerStats, setPlayerStats] = useState([]);
@@ -14,6 +21,48 @@ function Practice() {
     fetchData();
     fetchVersion();
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.get('/practice/settings')
+      .then(res => setSettings(res.data))
+      .catch(() => {});
+  }, [isAdmin]);
+
+  // Nothing ever triggered the scan before this: the endpoint existed but had
+  // no UI, so practice matches were only ever populated by the nightly cron.
+  const handleScan = async () => {
+    setScanning(true);
+    setScanResult('');
+    try {
+      const res = await api.post('/practice/scan');
+      const d = res.data || {};
+      setScanResult(
+        `Scan complete: ${d.practiceMatchesFound ?? 0} practice match(es) found, ` +
+        `${d.poolsUpdated ?? 0} champion pool(s) updated.`
+      );
+      await fetchData();
+      const s = await api.get('/practice/settings').catch(() => null);
+      if (s) setSettings(s.data);
+    } catch (err) {
+      setScanResult(err.response?.data?.error || 'Scan failed');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleSaveStartDate = async (value) => {
+    setSavingStartDate(true);
+    try {
+      const res = await api.put('/practice/settings', { team_start_date: value });
+      setSettings(res.data);
+      setScanResult('Team start date saved. Run a scan to pick up matches from that date.');
+    } catch (err) {
+      setScanResult(err.response?.data?.error || 'Failed to save start date');
+    } finally {
+      setSavingStartDate(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -103,6 +152,43 @@ function Practice() {
   return (
     <div className="practice-page">
       <h1 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>Team Stats</h1>
+
+      {isAdmin && (
+        <div className="card mb-3 practice-admin">
+          <div className="practice-admin-row">
+            <div>
+              <strong>Practice match scan</strong>
+              <div className="last-scan">
+                {settings?.last_scan_at
+                  ? `Last scan: ${new Date(settings.last_scan_at).toLocaleString()}`
+                  : 'Never scanned'}
+              </div>
+            </div>
+            <button className="btn btn-primary btn-small" onClick={handleScan} disabled={scanning}>
+              {scanning ? 'Scanning...' : 'Scan now'}
+            </button>
+          </div>
+
+          <div className="practice-admin-row">
+            <label htmlFor="team-start-date">
+              Team start date
+              <span className="last-scan">Only matches after this date are scanned</span>
+            </label>
+            <input
+              id="team-start-date"
+              type="date"
+              defaultValue={settings?.team_start_date || '2026-01-20'}
+              disabled={savingStartDate}
+              onBlur={(e) => {
+                const v = e.target.value;
+                if (v && v !== settings?.team_start_date) handleSaveStartDate(v);
+              }}
+            />
+          </div>
+
+          {scanResult && <div className="scan-result">{scanResult}</div>}
+        </div>
+      )}
 
       {/* Team Overview */}
       {overview && overview.totalMatches > 0 && (

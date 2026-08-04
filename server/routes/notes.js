@@ -4,16 +4,19 @@ const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Get all notes for user
+// Notes are shared across the team so everyone can read each other's prep.
+// Writing stays owner-only: create sets user_id from the token, and update and
+// delete both check ownership below.
 router.get('/', authenticateToken, (req, res) => {
   try {
     const notes = db.prepare(`
-      SELECT * FROM notes
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-    `).all(req.user.id);
+      SELECT n.*, u.username AS author_name
+      FROM notes n
+      LEFT JOIN users u ON n.user_id = u.id
+      ORDER BY n.created_at DESC
+    `).all();
 
-    res.json(notes);
+    res.json(notes.map(n => ({ ...n, is_mine: n.user_id === req.user.id })));
   } catch (error) {
     console.error('Error fetching notes:', error);
     res.status(500).json({ error: 'Failed to fetch notes' });
