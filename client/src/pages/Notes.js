@@ -17,9 +17,61 @@ function Notes() {
   const [category, setCategory] = useState('General');
   const { confirm, confirmDialogProps } = useConfirm();
 
+  const [clips, setClips] = useState([]);
+  const [uploadingClip, setUploadingClip] = useState(false);
+  const [storage, setStorage] = useState(null);
+
+  const isVideo = (name) => /\.(mp4|webm)$/i.test(name || '');
+  const formatSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`);
+
   useEffect(() => {
     fetchNotes();
+    api.get('/notes/clips/storage').then(r => setStorage(r.data)).catch(() => {});
   }, []);
+
+  // Clips live on a note, so they reload whenever the selection changes.
+  useEffect(() => {
+    if (!selectedNote?.id) { setClips([]); return; }
+    api.get(`/notes/${selectedNote.id}/clips`)
+      .then(r => setClips(r.data))
+      .catch(() => setClips([]));
+  }, [selectedNote?.id]);
+
+  const handleUploadClip = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !selectedNote?.id) return;
+
+    setUploadingClip(true);
+    setError('');
+    try {
+      const form = new FormData();
+      form.append('clip', file);
+      const res = await api.post(`/notes/${selectedNote.id}/clips`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setClips(prev => [res.data, ...prev]);
+      api.get('/notes/clips/storage').then(r => setStorage(r.data)).catch(() => {});
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to upload clip');
+    } finally {
+      setUploadingClip(false);
+    }
+  };
+
+  const handleDeleteClip = async (clip) => {
+    const confirmed = await confirm(`Delete "${clip.original_name}"?`, {
+      title: 'Delete Clip', confirmText: 'Delete'
+    });
+    if (!confirmed) return;
+    try {
+      await api.delete(`/notes/clips/${clip.id}`);
+      setClips(prev => prev.filter(c => c.id !== clip.id));
+      api.get('/notes/clips/storage').then(r => setStorage(r.data)).catch(() => {});
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to delete clip');
+    }
+  };
 
   const fetchNotes = async () => {
     try {
@@ -234,6 +286,63 @@ function Notes() {
               ) : (
                 <div style={{whiteSpace: 'pre-wrap', lineHeight: '1.8'}}>
                   {selectedNote?.content || <em style={{color: 'var(--text-secondary)'}}>No content</em>}
+                </div>
+              )}
+
+              {!isEditing && selectedNote && (
+                <div className="note-clips">
+                  <div className="note-clips-head">
+                    <h4>Clips &amp; images</h4>
+                    <div className="note-clips-actions">
+                      {storage && (
+                        <span className="note-clips-storage">
+                          {formatSize(storage.usedBytes)} of {formatSize(storage.budgetBytes)} used
+                        </span>
+                      )}
+                      <input
+                        type="file"
+                        id="clipUpload"
+                        accept="video/mp4,video/webm,image/*"
+                        style={{ display: 'none' }}
+                        onChange={handleUploadClip}
+                      />
+                      <button
+                        className="btn btn-primary btn-small"
+                        disabled={uploadingClip}
+                        onClick={() => document.getElementById('clipUpload').click()}
+                      >
+                        {uploadingClip ? 'Uploading...' : '+ Add clip'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {clips.length === 0 ? (
+                    <p className="note-clips-empty">
+                      No clips yet. Attach a short mp4/webm (up to 40MB) or a screenshot.
+                    </p>
+                  ) : (
+                    <div className="note-clips-grid">
+                      {clips.map(clip => (
+                        <div key={clip.id} className="note-clip-card">
+                          {isVideo(clip.filename) ? (
+                            <video src={`/api/notes/clips/file/${clip.filename}`} controls preload="metadata" />
+                          ) : (
+                            <img src={`/api/notes/clips/file/${clip.filename}`} alt={clip.original_name} />
+                          )}
+                          <div className="note-clip-meta">
+                            <span title={clip.original_name}>{clip.original_name}</span>
+                            <small>
+                              {clip.is_mine ? 'You' : clip.author_name} · {formatSize(clip.size_bytes)}
+                            </small>
+                          </div>
+                          {clip.is_mine && (
+                            <button className="btn btn-danger btn-small"
+                              onClick={() => handleDeleteClip(clip)}>Delete</button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

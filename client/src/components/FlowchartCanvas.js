@@ -3,6 +3,16 @@ import html2canvas from 'html2canvas';
 
 const NODE_TYPES = ['start', 'action', 'decision', 'note'];
 
+// Display names only. The underlying type keys stay as-is so previously saved
+// flowcharts keep rendering and the fc-pal-*/fc-shape-* CSS classes still match.
+const NODE_TYPE_LABELS = {
+  start: 'Bans',
+  action: 'Picks',
+  decision: 'Alternatives',
+  note: 'Note'
+};
+const labelFor = (type) => NODE_TYPE_LABELS[type] || type;
+
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
@@ -160,7 +170,7 @@ function FlowchartCanvas({
       return autoLayout(data.nodes || [], data.edges || []).map(migrateNode);
     }
     const startId = generateId();
-    return [{ id: startId, type: 'start', text: 'Start', x: 350, y: 80, width: 160, height: 100, championIds: [] }];
+    return [{ id: startId, type: 'start', text: 'Bans', x: 350, y: 80, width: 160, height: 100, championIds: [] }];
   });
   const [edges, setEdges] = useState(() => {
     if (initialFlowchart) {
@@ -219,7 +229,7 @@ function FlowchartCanvas({
     const startId = generateId();
     setSelectedFcId(null);
     setFcName('');
-    setNodes([{ id: startId, type: 'start', text: 'Start', x: 350, y: 80, width: 160, height: 100, championIds: [] }]);
+    setNodes([{ id: startId, type: 'start', text: 'Bans', x: 350, y: 80, width: 160, height: 100, championIds: [] }]);
     setEdges([]);
     setSelectedNodeId(null);
   };
@@ -738,9 +748,9 @@ function FlowchartCanvas({
                     e.dataTransfer.setData('nodeType', type);
                     e.dataTransfer.effectAllowed = 'copy';
                   }}
-                  title={`Drag to add ${type} node`}
+                  title={`Drag to add a ${labelFor(type)} node`}
                 >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                  {labelFor(type)}
                 </div>
               ))}
             </div>
@@ -1037,7 +1047,7 @@ function FlowchartCanvas({
                 }}
               >
                 {NODE_TYPES.map(t => (
-                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                  <option key={t} value={t}>{labelFor(t)}</option>
                 ))}
               </select>
             </div>

@@ -1,8 +1,37 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const db = require('../database/db');
 const { authenticateToken } = require('../middleware/auth');
+const {
+  uploadDir, MAX_UPLOAD_BYTES, enforceStorageBudget, storageStatus
+} = require('../lib/uploads');
 
 const router = express.Router();
+
+const clipStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, 'clip-' + Date.now() + '-' + Math.round(Math.random() * 1e9) +
+       path.extname(file.originalname).toLowerCase());
+  }
+});
+
+const CLIP_TYPES = /mp4|webm|jpeg|jpg|png|gif|webp/;
+const uploadClip = multer({
+  storage: clipStorage,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (req, file, cb) => {
+    const ext = CLIP_TYPES.test(path.extname(file.originalname).toLowerCase());
+    const mime = CLIP_TYPES.test(file.mimetype);
+    if (ext && mime) return cb(null, true);
+    cb(new Error('Only clips (mp4, webm) and images (jpg, png, gif, webp) are allowed'));
+  }
+});
 
 // Notes are shared across the team so everyone can read each other's prep.
 // Writing stays owner-only: create sets user_id from the token, and update and
@@ -128,6 +157,97 @@ router.post('/champion', authenticateToken, (req, res) => {
     console.error('Error saving champion note:', error);
     res.status(500).json({ error: 'Failed to save champion note' });
   }
+});
+
+// ============= NOTE CLIPS =============
+
+// Serve an uploaded clip. Auth-gated like the rest of the notes API.
+router.get('/clips/file/:filename', authenticateToken, (req, res) => {
+  // Reject anything that could escape the upload directory.
+  const name = path.basename(req.params.filename);
+  const filepath = path.join(uploadDir, name);
+  if (!fs.existsSync(filepath)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  res.sendFile(filepath);
+});
+
+// How much upload room is left, so the UI can warn before it runs out.
+router.get('/clips/storage', authenticateToken, (req, res) => {
+  res.json(storageStatus());
+});
+
+router.get('/:id/clips', authenticateToken, (req, res) => {
+  try {
+    const clips = db.prepare(`
+      SELECT c.*, u.username AS author_name
+      FROM note_clips c
+      LEFT JOIN users u ON c.user_id = u.id
+      WHERE c.note_id = ?
+      ORDER BY c.created_at DESC
+    `).all(req.params.id);
+    res.json(clips.map(c => ({ ...c, is_mine: c.user_id === req.user.id })));
+  } catch (error) {
+    console.error('Error fetching clips:', error);
+    res.status(500).json({ error: 'Failed to fetch clips' });
+  }
+});
+
+// Anyone on the team can attach a clip to any note, matching how notes are
+// readable team-wide; deletion stays with whoever uploaded it.
+router.post('/:id/clips', authenticateToken, uploadClip.single('clip'), enforceStorageBudget, (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file provided' });
+
+    const note = db.prepare('SELECT id FROM notes WHERE id = ?').get(req.params.id);
+    if (!note) {
+      try { fs.unlinkSync(path.join(uploadDir, req.file.filename)); } catch (e) {}
+      return res.status(404).json({ error: 'Note not found' });
+    }
+
+    const result = db.prepare(`
+      INSERT INTO note_clips (note_id, user_id, filename, original_name, size_bytes)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(note.id, req.user.id, req.file.filename, req.file.originalname, req.file.size);
+
+    const clip = db.prepare(`
+      SELECT c.*, u.username AS author_name FROM note_clips c
+      LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?
+    `).get(result.lastInsertRowid);
+    res.status(201).json({ ...clip, is_mine: true });
+  } catch (error) {
+    console.error('Error uploading clip:', error);
+    res.status(500).json({ error: 'Failed to upload clip' });
+  }
+});
+
+router.delete('/clips/:clipId', authenticateToken, (req, res) => {
+  try {
+    const clip = db.prepare('SELECT * FROM note_clips WHERE id = ?').get(req.params.clipId);
+    if (!clip) return res.status(404).json({ error: 'Clip not found' });
+    if (clip.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    try { fs.unlinkSync(path.join(uploadDir, clip.filename)); } catch (e) {}
+    db.prepare('DELETE FROM note_clips WHERE id = ?').run(clip.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting clip:', error);
+    res.status(500).json({ error: 'Failed to delete clip' });
+  }
+});
+
+// Multer rejects (too large, wrong type) arrive here as errors rather than as
+// a normal response, so they need translating into something the UI can show.
+router.use((err, req, res, next) => {
+  if (err && err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({
+      error: `File is too large. Limit is ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)}MB.`
+    });
+  }
+  if (err) return res.status(400).json({ error: err.message });
+  next();
 });
 
 module.exports = router;

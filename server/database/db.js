@@ -258,6 +258,21 @@ db.exec(`
   );
 `);
 
+// Short video clips (or images) attached to a note, for VOD review.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS note_clips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    original_name TEXT,
+    size_bytes INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
 // Initialize practice settings if not exists
 try {
   db.prepare('INSERT OR IGNORE INTO practice_settings (id) VALUES (1)').run();
