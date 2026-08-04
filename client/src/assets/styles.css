@@ -1451,21 +1451,22 @@ tr:hover {
    completely; brighter ones fade instead of ending in a hard rectangle. */
 .champ-marquee {
   position: fixed;
-  top: 70px;
+  bottom: 0;
   left: 0;
   right: 0;
-  height: 62vh;
+  height: 52vh;
   overflow: hidden;
   z-index: 0;
   pointer-events: none;
-  /* Fade the whole band out at the bottom so it sits under the page content. */
-  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  /* Anchored to the bottom, so the fade runs the other way: solid along the
+     bottom edge, dissolving upward before it reaches the page content. */
+  -webkit-mask-image: linear-gradient(to top, #000 45%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 45%, transparent 100%);
 }
 
 .champ-marquee-track {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 2vw;
   width: max-content;
   height: 100%;
@@ -1507,8 +1508,112 @@ tr:hover {
 
 @media (max-width: 800px) {
   .champ-marquee {
-    height: 40vh;
+    height: 32vh;
   }
+}
+
+/* Clip discussion thread */
+.clip-chat {
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.clip-chat-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.15rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.clip-chat-toggle:hover {
+  color: var(--riot-red);
+}
+
+.clip-chat-thread {
+  max-height: 190px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.35rem 0;
+}
+
+.clip-chat-empty {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.clip-chat-msg {
+  border-left: 2px solid var(--border-color);
+  padding-left: 0.5rem;
+}
+
+.clip-chat-msg.mine {
+  border-left-color: var(--riot-red);
+}
+
+.clip-chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+}
+
+.clip-chat-meta strong {
+  color: var(--text-primary);
+}
+
+.clip-chat-del {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.clip-chat-del:hover {
+  color: var(--error);
+}
+
+.clip-chat-body {
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.clip-chat-error {
+  font-size: 0.72rem;
+  color: var(--error);
+  margin-bottom: 0.3rem;
+}
+
+.clip-chat-form {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.clip-chat-form input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  padding: 0.3rem 0.45rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.clip-chat-form input:focus {
+  outline: none;
+  border-color: var(--riot-red);
 }
 
 /* Clips attached to notes */

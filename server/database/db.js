@@ -273,6 +273,19 @@ db.exec(`
   );
 `);
 
+// Discussion thread on an individual clip.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS clip_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clip_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (clip_id) REFERENCES note_clips(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
 // Initialize practice settings if not exists
 try {
   db.prepare('INSERT OR IGNORE INTO practice_settings (id) VALUES (1)').run();

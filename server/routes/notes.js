@@ -256,6 +256,63 @@ router.delete('/clips/:clipId', authenticateToken, (req, res) => {
   }
 });
 
+// ============= CLIP DISCUSSION =============
+
+router.get('/clips/:clipId/comments', authenticateToken, (req, res) => {
+  try {
+    const comments = db.prepare(`
+      SELECT c.*, u.username AS author_name
+      FROM clip_comments c
+      LEFT JOIN users u ON c.user_id = u.id
+      WHERE c.clip_id = ?
+      ORDER BY c.created_at ASC
+    `).all(req.params.clipId);
+    res.json(comments.map(c => ({ ...c, is_mine: c.user_id === req.user.id })));
+  } catch (error) {
+    console.error('Error fetching clip comments:', error);
+    res.status(500).json({ error: 'Failed to fetch comments' });
+  }
+});
+
+router.post('/clips/:clipId/comments', authenticateToken, (req, res) => {
+  try {
+    const body = (req.body.body || '').trim();
+    if (!body) return res.status(400).json({ error: 'Comment cannot be empty' });
+    if (body.length > 2000) return res.status(400).json({ error: 'Comment is too long' });
+
+    const clip = db.prepare('SELECT id FROM note_clips WHERE id = ?').get(req.params.clipId);
+    if (!clip) return res.status(404).json({ error: 'Clip not found' });
+
+    const result = db.prepare(
+      'INSERT INTO clip_comments (clip_id, user_id, body) VALUES (?, ?, ?)'
+    ).run(clip.id, req.user.id, body);
+
+    const comment = db.prepare(`
+      SELECT c.*, u.username AS author_name FROM clip_comments c
+      LEFT JOIN users u ON c.user_id = u.id WHERE c.id = ?
+    `).get(result.lastInsertRowid);
+    res.status(201).json({ ...comment, is_mine: true });
+  } catch (error) {
+    console.error('Error posting clip comment:', error);
+    res.status(500).json({ error: 'Failed to post comment' });
+  }
+});
+
+router.delete('/clips/comments/:commentId', authenticateToken, (req, res) => {
+  try {
+    const comment = db.prepare('SELECT * FROM clip_comments WHERE id = ?').get(req.params.commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (comment.user_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    db.prepare('DELETE FROM clip_comments WHERE id = ?').run(comment.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting clip comment:', error);
+    res.status(500).json({ error: 'Failed to delete comment' });
+  }
+});
+
 // Multer rejects (too large, wrong type) arrive here as errors rather than as
 // a normal response, so they need translating into something the UI can show.
 router.use((err, req, res, next) => {

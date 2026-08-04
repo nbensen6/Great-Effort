@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useConfirm } from '../hooks/useConfirm';
+import ClipComments from '../components/ClipComments';
 
 const CATEGORIES = ['General', 'Champion', 'Matchup', 'Scrim', 'Strategy'];
 
@@ -343,6 +344,7 @@ function Notes() {
                             <button className="btn btn-danger btn-small"
                               onClick={() => handleDeleteClip(clip)}>Delete</button>
                           )}
+                          <ClipComments clipId={clip.id} />
                         </div>
                       ))}
                     </div>
