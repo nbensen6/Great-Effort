@@ -1,4 +1,5 @@
 const express = require('express');
+const { isCronRequest } = require('../lib/cronAuth');
 const db = require('../database/db');
 const { authenticateToken, requireAdmin, JWT_SECRET } = require('../middleware/auth');
 const { normalizePool, draftableIds } = require('../lib/championPool');
@@ -251,7 +252,7 @@ router.post('/:id/sync-riot', authenticateToken, async (req, res) => {
     let soloQueue = null;
     try {
       const rankedData = await riotFetch(
-        `https://${apiRegion}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerData.id}`
+        `https://${apiRegion}.api.riotgames.com/lol/league/v4/entries/by-puuid/${accountData.puuid}`
       );
       soloQueue = rankedData.find(q => q.queueType === 'RANKED_SOLO_5x5');
     } catch (e) {
@@ -415,8 +416,7 @@ router.get('/:id/opgg-data', authenticateToken, async (req, res) => {
 // Auto-refresh all players (called by cron job)
 router.post('/refresh-all', async (req, res) => {
   try {
-    const cronSecret = req.headers['x-cron-secret'];
-    if (cronSecret !== process.env.CRON_SECRET && cronSecret !== 'internal-refresh') {
+    if (!isCronRequest(req)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -478,7 +478,7 @@ router.post('/refresh-all', async (req, res) => {
         let soloQueue = null;
         try {
           const rankedData = await riotFetch(
-            `https://${apiRegion}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerData.id}`
+            `https://${apiRegion}.api.riotgames.com/lol/league/v4/entries/by-puuid/${accountData.puuid}`
           );
           soloQueue = rankedData.find(q => q.queueType === 'RANKED_SOLO_5x5');
         } catch (e) {}

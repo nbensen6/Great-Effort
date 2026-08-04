@@ -1,4 +1,5 @@
 const express = require('express');
+const { isCronRequest } = require('../lib/cronAuth');
 const db = require('../database/db');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
@@ -31,9 +32,8 @@ const getRouting = (region) => {
 
 // POST /api/practice/scan - Scan for practice matches (admin or cron)
 router.post('/scan', async (req, res, next) => {
-  // Allow cron jobs to bypass auth
-  const cronSecret = req.headers['x-cron-secret'];
-  if (cronSecret === process.env.CRON_SECRET || cronSecret === 'internal-refresh') {
+  // Allow the scheduled job through; everyone else authenticates normally.
+  if (isCronRequest(req)) {
     req.user = { role: 'admin' };
     return next();
   }

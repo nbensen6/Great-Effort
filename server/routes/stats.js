@@ -1,4 +1,5 @@
 const express = require('express');
+const { isCronRequest } = require('../lib/cronAuth');
 const db = require('../database/db');
 const { authenticateToken } = require('../middleware/auth');
 
@@ -86,8 +87,7 @@ router.get('/player/:name', authenticateToken, (req, res) => {
 // Auto-import recent matches from Riot API for all players (called by cron job)
 router.post('/auto-import', async (req, res) => {
   try {
-    const cronSecret = req.headers['x-cron-secret'];
-    if (cronSecret !== process.env.CRON_SECRET && cronSecret !== 'internal-refresh') {
+    if (!isCronRequest(req)) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 

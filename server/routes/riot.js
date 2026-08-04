@@ -84,8 +84,10 @@ router.get('/player/:gameName/:tagLine', authenticateToken, async (req, res) => 
     // Step 3: Get ranked data
     let rankedData = [];
     try {
+      // SUMMONER-V4 no longer returns the encrypted summoner id, so the
+      // by-summoner form 403s. Key off the PUUID instead.
       rankedData = await riotFetch(
-        `https://${region}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerData.id}`
+        `https://${region}.api.riotgames.com/lol/league/v4/entries/by-puuid/${puuid}`
       );
     } catch (e) {
       // Player might be unranked
@@ -200,7 +202,7 @@ router.post('/import-opgg', authenticateToken, async (req, res) => {
         // Step 3: Get ranked data
         try {
           const rankedData = await riotFetch(
-            `https://${riotRegion}.api.riotgames.com/lol/league/v4/entries/by-summoner/${summonerData.id}`
+            `https://${riotRegion}.api.riotgames.com/lol/league/v4/entries/by-puuid/${accountData.puuid}`
           );
           const soloQueue = rankedData.find(q => q.queueType === 'RANKED_SOLO_5x5');
           if (soloQueue) {
