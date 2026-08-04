@@ -70,10 +70,6 @@ function Roster() {
 
   const [champions, setChampions] = useState([]);
 
-  // Per-suggestion champion overrides, keyed by suggestion id. Absent roles
-  // fall back to whatever the generator produced from the champion pools.
-  const [suggestionEdits, setSuggestionEdits] = useState({});
-  const [savingSuggestion, setSavingSuggestion] = useState(null);
 
   // Saved-composition inline editing
   const [editingComp, setEditingComp] = useState(null); // composition id
@@ -377,9 +373,6 @@ function Roster() {
     return `https://www.op.gg/summoners/${region}/${encodeURIComponent(formattedName)}`;
   };
 
-  const COMP_ROLES = ['top', 'jungle', 'mid', 'adc', 'support'];
-  const ROLE_BY_SLOT = { top: 'Top', jungle: 'Jungle', mid: 'Mid', adc: 'ADC', support: 'Support' };
-
   // Every champion each role's player can actually play, tagged with the tier
   // and note from their pool, for the suggestion dropdowns.
   const poolOptionsByRole = useMemo(() => {
@@ -393,80 +386,6 @@ function Roster() {
     });
     return map;
   }, [players]);
-
-  // Suggestions are seeded from the draft tiers rather than an arbitrary slice
-  // of the flat pool, so each one means something: what we default to, what we
-  // pivot to after seeing the enemy, and what we save for specific drafts.
-  const getCompSuggestions = () => {
-    const byRole = poolOptionsByRole;
-    if (Object.keys(byRole).length < 3) return [];
-
-    const pick = (role, tier) => byRole[role]?.find(c => c.tier === tier)?.id;
-    const mainOf = (role) => pick(role, 'main') || byRole[role]?.[0]?.id;
-
-    const build = (id, name, hint, chooser) => ({
-      id,
-      name,
-      hint,
-      champions: COMP_ROLES.reduce((acc, slot) => {
-        acc[slot] = chooser(ROLE_BY_SLOT[slot]);
-        return acc;
-      }, {})
-    });
-
-    const suggestions = [
-      build('main', 'Main Comfort Picks', 'First pick from every pool',
-        (role) => mainOf(role)),
-      build('counter', 'Counter Comp', 'Counter picks where we have one',
-        (role) => pick(role, 'counter') || mainOf(role)),
-      build('situational', 'Situational', 'Situational picks where we have one',
-        (role) => pick(role, 'situational') || mainOf(role))
-    ];
-
-    // Drop any suggestion that ended up identical to Main Comfort Picks.
-    const key = (s) => COMP_ROLES.map(r => s.champions[r] || '-').join('|');
-    const mainKey = key(suggestions[0]);
-    return suggestions.filter((s, i) => i === 0 || key(s) !== mainKey);
-  };
-
-  const suggestionChampions = (s) => ({ ...s.champions, ...(suggestionEdits[s.id] || {}) });
-
-  const setSuggestionChampion = (suggestionId, slot, champId) => {
-    setSuggestionEdits(prev => ({
-      ...prev,
-      [suggestionId]: { ...(prev[suggestionId] || {}), [slot]: champId }
-    }));
-  };
-
-  const resetSuggestion = (suggestionId) => {
-    setSuggestionEdits(prev => {
-      const next = { ...prev };
-      delete next[suggestionId];
-      return next;
-    });
-  };
-
-  const handleSaveSuggestion = async (suggestion) => {
-    setSavingSuggestion(suggestion.id);
-    try {
-      const champs = suggestionChampions(suggestion);
-      const response = await api.post('/compositions', {
-        name: suggestion.name,
-        description: suggestion.hint,
-        top_champion: champs.top || '',
-        jungle_champion: champs.jungle || '',
-        mid_champion: champs.mid || '',
-        adc_champion: champs.adc || '',
-        support_champion: champs.support || '',
-        tags: 'from suggestion'
-      });
-      setCompositions([response.data, ...compositions]);
-    } catch (err) {
-      showAlert(err.response?.data?.error || 'Failed to save composition');
-    } finally {
-      setSavingSuggestion(null);
-    }
-  };
 
   const startEditComp = (comp) => {
     setEditingComp(comp.id);
@@ -539,7 +458,6 @@ function Roster() {
 
   if (loading) return <div className="loading">Loading roster...</div>;
 
-  const compSuggestions = getCompSuggestions();
   const isAdmin = user?.role === 'admin';
 
   return (
@@ -1004,88 +922,6 @@ function Roster() {
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Composition Suggestions */}
-      {compSuggestions.length > 0 && (
-        <div className="card mt-3">
-          <div className="card-header">
-            <h3 className="card-title">Suggested Compositions</h3>
-          </div>
-          <p style={{color: 'var(--text-secondary)', marginBottom: '1rem', fontSize: '0.9rem'}}>
-            Seeded from each player's draft tiers. {user ? 'Swap any pick, then save it as a composition.' : 'Sign in to edit these.'}
-          </p>
-          <div className="comp-suggestions">
-            {compSuggestions.map(suggestion => {
-              const champs = suggestionChampions(suggestion);
-              const edited = !!suggestionEdits[suggestion.id];
-              return (
-                <div key={suggestion.id} className="comp-suggestion-card">
-                  <div className="comp-suggestion-head">
-                    <div>
-                      <h4>{suggestion.name}{edited && <span className="comp-edited-flag">edited</span>}</h4>
-                      <span className="comp-suggestion-hint">{suggestion.hint}</span>
-                    </div>
-                    {user && (
-                      <div className="comp-suggestion-actions">
-                        {edited && (
-                          <button className="btn btn-secondary btn-small"
-                            onClick={() => resetSuggestion(suggestion.id)}>Reset</button>
-                        )}
-                        <button className="btn btn-primary btn-small"
-                          disabled={savingSuggestion === suggestion.id}
-                          onClick={() => handleSaveSuggestion(suggestion)}>
-                          {savingSuggestion === suggestion.id ? 'Saving...' : 'Save as Comp'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="comp-champions">
-                    {COMP_ROLES.map(slot => {
-                      const champId = champs[slot];
-                      const options = poolOptionsByRole[ROLE_BY_SLOT[slot]] || [];
-                      if (!user) {
-                        return champId && (
-                          <div key={slot} className="comp-champ">
-                            <img src={getChampionImage(champId)} alt={champId}
-                              title={`${slot}: ${champId}`}
-                              onError={(e) => { e.target.style.display = 'none'; }} />
-                            <span>{slot}</span>
-                          </div>
-                        );
-                      }
-                      return (
-                        <div key={slot} className="comp-champ comp-champ-editable">
-                          <img
-                            src={getChampionImage(champId)}
-                            alt={champId || slot}
-                            title={champId || slot}
-                            style={{ visibility: champId ? 'visible' : 'hidden' }}
-                            onError={(e) => { e.target.style.visibility = 'hidden'; }}
-                          />
-                          <select
-                            className="comp-champ-select"
-                            value={champId || ''}
-                            onChange={(e) => setSuggestionChampion(suggestion.id, slot, e.target.value)}
-                          >
-                            <option value="">— none —</option>
-                            {options.map(o => (
-                              <option key={o.id} value={o.id}>
-                                {(champions.find(c => c.id === o.id)?.name || o.id)}
-                                {o.note ? ` — ${o.note}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                          <span>{slot}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 

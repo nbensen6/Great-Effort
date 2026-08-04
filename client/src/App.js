@@ -9,6 +9,7 @@ import Stats from './pages/Practice';
 import DraftHelper from './pages/DraftHelper';
 import Notes from './pages/Notes';
 import Scouting from './pages/Scouting';
+import Flowcharts from './pages/Flowcharts';
 import Roster from './pages/Roster';
 
 function ProtectedRoute({ children }) {
@@ -48,6 +49,11 @@ function App() {
           <Route path="/scouting" element={
             <ProtectedRoute>
               <Scouting />
+            </ProtectedRoute>
+          } />
+          <Route path="/flowcharts" element={
+            <ProtectedRoute>
+              <Flowcharts />
             </ProtectedRoute>
           } />
           <Route path="/roster" element={<Roster />} />

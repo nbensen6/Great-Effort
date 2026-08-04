@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
-import FlowchartCanvas from '../components/FlowchartCanvas';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useConfirm } from '../hooks/useConfirm';
-import { toChampionList } from '../lib/champions';
 
 const NOTE_CATEGORIES = ['General', 'Draft Tendencies', 'Playstyle', 'Weaknesses', 'Player Notes'];
 
@@ -18,7 +16,6 @@ function Scouting() {
   const [teamNotes, setTeamNotes] = useState([]);
   const [teamImages, setTeamImages] = useState([]);
   const [teamDrafts, setTeamDrafts] = useState([]);
-  const [teamFlowcharts, setTeamFlowcharts] = useState([]);
   const [version, setVersion] = useState('14.1.1');
 
   const [showNewTeam, setShowNewTeam] = useState(false);
@@ -45,15 +42,10 @@ function Scouting() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
 
-  // Flowchart canvas state
-  const [showFlowchartCanvas, setShowFlowchartCanvas] = useState(false);
-  const [editingFlowchart, setEditingFlowchart] = useState(null);
-  const [champions, setChampions] = useState([]);
 
   useEffect(() => {
     fetchTeams();
     fetchVersion();
-    fetchChampions();
   }, []);
 
   const fetchTeams = async () => {
@@ -77,34 +69,17 @@ function Scouting() {
     }
   };
 
-  const fetchChampions = async () => {
-    try {
-      const response = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
-      const versions = await response.json();
-      const latestVersion = versions[0];
-
-      const champResponse = await fetch(`https://ddragon.leagueoflegends.com/cdn/${latestVersion}/data/en_US/champion.json`);
-      const data = await champResponse.json();
-
-      setChampions(toChampionList(data.data, latestVersion));
-    } catch (err) {
-      console.error('Failed to load champions');
-    }
-  };
-
   const fetchTeamData = useCallback(async (teamId) => {
     try {
-      const [notesRes, imagesRes, draftsRes, flowchartsRes, playersRes] = await Promise.all([
+      const [notesRes, imagesRes, draftsRes, playersRes] = await Promise.all([
         api.get(`/scouting/teams/${teamId}/notes`),
         api.get(`/scouting/teams/${teamId}/images`),
         api.get(`/scouting/teams/${teamId}/drafts`),
-        api.get(`/scouting/teams/${teamId}/flowcharts`),
         api.get(`/scouting/teams/${teamId}/players`)
       ]);
       setTeamNotes(notesRes.data);
       setTeamImages(imagesRes.data);
       setTeamDrafts(draftsRes.data);
-      setTeamFlowcharts(flowchartsRes.data);
       setTeamPlayers(playersRes.data);
     } catch (err) {
       setError('Failed to load team data');
@@ -443,50 +418,6 @@ function Scouting() {
     }
   };
 
-  // Flowchart handlers
-  const openNewFlowchart = () => {
-    setEditingFlowchart(null);
-    setShowFlowchartCanvas(true);
-  };
-
-  const openEditFlowchart = (flowchart) => {
-    setEditingFlowchart(flowchart);
-    setShowFlowchartCanvas(true);
-  };
-
-  const handleSaveFlowchart = async (fcId, payload) => {
-    try {
-      if (fcId) {
-        const response = await api.put(`/scouting/flowcharts/${fcId}`, payload);
-        setTeamFlowcharts(prev => prev.map(f => f.id === fcId ? response.data : f));
-        return response.data;
-      } else {
-        const response = await api.post(`/scouting/teams/${selectedTeam.id}/flowcharts`, payload);
-        setTeamFlowcharts(prev => [response.data, ...prev]);
-        return response.data;
-      }
-    } catch (err) {
-      console.error('Flowchart save error:', err?.response?.data || err.message || err);
-      setError('Failed to save flowchart: ' + (err?.response?.data?.error || err.message));
-      return null;
-    }
-  };
-
-  const handleDeleteFlowchart = async (flowchartId) => {
-    const confirmed = await confirm('Delete this flowchart?', {
-      title: 'Delete Flowchart',
-      confirmText: 'Delete'
-    });
-    if (!confirmed) return;
-
-    try {
-      await api.delete(`/scouting/flowcharts/${flowchartId}`);
-      setTeamFlowcharts(teamFlowcharts.filter(f => f.id !== flowchartId));
-    } catch (err) {
-      setError('Failed to delete flowchart');
-    }
-  };
-
   const getChampionImage = (champId) => {
     if (!champId) return null;
     return `https://ddragon.leagueoflegends.com/cdn/${version}/img/champion/${champId}.png`;
@@ -627,12 +558,6 @@ function Scouting() {
                 onClick={() => setActiveTab('players')}
               >
                 Players ({teamPlayers.length})
-              </button>
-              <button
-                className={`team-tab ${activeTab === 'flowcharts' ? 'active' : ''}`}
-                onClick={() => setActiveTab('flowcharts')}
-              >
-                Flowcharts ({teamFlowcharts.length})
               </button>
               <button
                 className={`team-tab ${activeTab === 'drafts' ? 'active' : ''}`}
@@ -1086,72 +1011,6 @@ function Scouting() {
               </div>
             )}
 
-            {activeTab === 'flowcharts' && (
-              <div className="flowcharts-tab">
-                <div style={{marginBottom: '1rem'}}>
-                  <button className="btn btn-primary" onClick={openNewFlowchart}>
-                    + New Flowchart
-                  </button>
-                </div>
-
-                {teamFlowcharts.length === 0 ? (
-                  <p style={{color: 'var(--text-secondary)'}}>
-                    No flowcharts yet. Create a draft flowchart to plan pick/ban strategies.
-                  </p>
-                ) : (
-                  teamFlowcharts.map(fc => {
-                    const data = typeof fc.data === 'string' ? JSON.parse(fc.data) : fc.data;
-                    const nodeCount = data.nodes?.length || 0;
-
-                    return (
-                      <div key={fc.id} className="card mb-2">
-                        <div className="card-header">
-                          <div>
-                            <h4 style={{color: 'var(--accent-gold)'}}>{fc.name}</h4>
-                            <small style={{color: 'var(--text-secondary)'}}>
-                              {formatDate(fc.created_at)}{fc.author_name ? ` by ${fc.author_name}` : ''} — {nodeCount} node{nodeCount !== 1 ? 's' : ''}
-                            </small>
-                          </div>
-                          <div style={{display: 'flex', gap: '0.5rem'}}>
-                            <button
-                              className="btn btn-secondary btn-small"
-                              onClick={() => openEditFlowchart(fc)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="btn btn-danger btn-small"
-                              onClick={() => handleDeleteFlowchart(fc.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-
-            {showFlowchartCanvas && (
-              <FlowchartCanvas
-                teamId={selectedTeam.id}
-                flowcharts={teamFlowcharts}
-                drafts={teamDrafts}
-                initialFlowchart={editingFlowchart}
-                champions={champions}
-                version={version}
-                enemyPlayers={teamPlayers}
-                onSave={handleSaveFlowchart}
-                onDelete={handleDeleteFlowchart}
-                onClose={() => {
-                  setShowFlowchartCanvas(false);
-                  setEditingFlowchart(null);
-                  fetchTeamData(selectedTeam.id);
-                }}
-              />
-            )}
           </>
         ) : (
           <div style={{textAlign: 'center', padding: '4rem', color: 'var(--text-secondary)'}}>

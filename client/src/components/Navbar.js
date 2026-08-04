@@ -25,6 +25,7 @@ function Navbar() {
             <NavLink to="/stats">Stats</NavLink>
             <NavLink to="/draft">Draft</NavLink>
             <NavLink to="/scouting">Scouting</NavLink>
+            <NavLink to="/flowcharts">Flowcharts</NavLink>
             <NavLink to="/notes">Notes</NavLink>
           </>
         )}
