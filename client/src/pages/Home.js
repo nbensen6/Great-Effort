@@ -2,14 +2,14 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PageBackground from '../components/PageBackground';
-import ChampionMarquee from '../components/ChampionMarquee';
+import ChampionHero from '../components/ChampionHero';
 
 function Home() {
   const { user } = useAuth();
 
   return (
     <PageBackground>
-      <ChampionMarquee />
+      <ChampionHero />
       <div className="home">
         {!user && (
           <div className="home-hero">
