@@ -1445,6 +1445,72 @@ tr:hover {
   background: rgba(209, 54, 58, 0.08);
 }
 
+/* ===== Home champion marquee =====
+   Riot ships no transparent champion art, so each portrait is edge-masked and
+   blended rather than cut out. On the dark splashes the background disappears
+   completely; brighter ones fade instead of ending in a hard rectangle. */
+.champ-marquee {
+  position: fixed;
+  top: 70px;
+  left: 0;
+  right: 0;
+  height: 62vh;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+  /* Fade the whole band out at the bottom so it sits under the page content. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+
+.champ-marquee-track {
+  display: flex;
+  align-items: flex-start;
+  gap: 2vw;
+  width: max-content;
+  height: 100%;
+  animation-name: champ-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+.champ-marquee-track img {
+  height: 100%;
+  width: auto;
+  object-fit: cover;
+  opacity: 0.5;
+  /* `lighten` keeps pixels only where the art is brighter than the page, so
+     near-black splash backgrounds drop out entirely. */
+  mix-blend-mode: lighten;
+  -webkit-mask-image: radial-gradient(ellipse 62% 62% at 50% 42%, #000 40%, transparent 78%);
+  mask-image: radial-gradient(ellipse 62% 62% at 50% 42%, #000 40%, transparent 78%);
+}
+
+@keyframes champ-scroll {
+  from { transform: translateX(0); }
+  /* Exactly half: the track holds two copies, so this loops seamlessly. */
+  to   { transform: translateX(-50%); }
+}
+
+/* Home content sits above the marquee. */
+.page-background .home {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .champ-marquee-track {
+    animation: none;
+  }
+}
+
+@media (max-width: 800px) {
+  .champ-marquee {
+    height: 40vh;
+  }
+}
+
 /* Clips attached to notes */
 .note-clips {
   margin-top: 1.5rem;
