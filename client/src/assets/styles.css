@@ -3235,6 +3235,12 @@ tr:hover {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
+  /* Rows must be content-sized. The container has a definite height, so with
+     the default auto rows the browser squeezed all 35 rows in to fit (21px
+     each) instead of overflowing, and .fc-champ-item's overflow:hidden clipped
+     each 50px icon down to a band. max-content lets the grid exceed the
+     container so overflow-y actually scrolls. */
+  grid-auto-rows: max-content;
   gap: 4px;
   align-content: start;
 }
