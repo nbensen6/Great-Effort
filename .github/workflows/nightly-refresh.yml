@@ -9,10 +9,23 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    env:
+      BASE_URL: https://tge-lol-team.fly.dev
     steps:
+      - name: Check CRON_SECRET is configured
+        run: |
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "::error::CRON_SECRET repository secret is not set. Add it under"
+            echo "::error::Settings > Secrets and variables > Actions, matching the Fly secret."
+            exit 1
+          fi
+
+      # --fail-with-body makes curl exit non-zero on 4xx/5xx while still printing
+      # the response. Without it a 403 from a mismatched CRON_SECRET exits 0 and
+      # the whole workflow reports success while refreshing nothing.
       - name: Refresh all player stats (Roster)
         run: |
-          curl -X POST https://tge-lol-team.fly.dev/api/players/refresh-all \
+          curl --fail-with-body -sS -X POST "$BASE_URL/api/players/refresh-all" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json"
 
@@ -21,7 +34,7 @@ jobs:
 
       - name: Auto-import match stats (Stats page)
         run: |
-          curl -X POST https://tge-lol-team.fly.dev/api/stats/auto-import \
+          curl --fail-with-body -sS -X POST "$BASE_URL/api/stats/auto-import" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json"
 
@@ -30,6 +43,6 @@ jobs:
 
       - name: Scan for practice matches
         run: |
-          curl -X POST https://tge-lol-team.fly.dev/api/practice/scan \
+          curl --fail-with-body -sS -X POST "$BASE_URL/api/practice/scan" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json"
