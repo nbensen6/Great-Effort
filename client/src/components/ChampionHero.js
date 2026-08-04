@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { normalizePool } from '../lib/championPool';
 
-// Full-bleed splash art, one champion at a time, crossfading like the hero
-// carousel on riotgames.com. Splash is the landscape 1215x717 art — the whole
-// image, not a masked cutout.
+// Ambient backdrop: full splash art crossfading behind the page content, faded
+// into the page background rather than sitting in a hard-edged banner. Purely
+// decorative, so it takes no pointer events and carries no caption.
 const SPLASH = (id) => `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${id}_0.jpg`;
 
 const FALLBACK = [
@@ -19,7 +19,6 @@ const INTERVAL_MS = 6000;
 function ChampionHero() {
   const [slides, setSlides] = useState(FALLBACK);
   const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
   const timer = useRef(null);
 
   useEffect(() => {
@@ -44,18 +43,14 @@ function ChampionHero() {
   }, [slides.length]);
 
   useEffect(() => {
-    if (paused || slides.length < 2) return;
+    if (slides.length < 2) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     timer.current = setInterval(() => advance(1), INTERVAL_MS);
     return () => clearInterval(timer.current);
-  }, [paused, slides.length, advance, index]);
+  }, [slides.length, advance, index]);
 
   return (
-    <div
-      className="hero-carousel"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-    >
+    <div className="hero-carousel" aria-hidden="true">
       {slides.map((s, i) => (
         <div
           key={s.id}
@@ -68,31 +63,6 @@ function ChampionHero() {
       ))}
 
       <div className="hero-scrim" />
-
-      <div className="hero-caption">
-        <span className="hero-role">{slides[index]?.role}</span>
-        <h2>{slides[index]?.id?.replace(/([a-z])([A-Z])/g, '$1 $2')}</h2>
-        {slides[index]?.player && <span className="hero-player">{slides[index].player}</span>}
-      </div>
-
-      {slides.length > 1 && (
-        <>
-          <button className="hero-nav prev" aria-label="Previous champion"
-            onClick={() => advance(-1)}>‹</button>
-          <button className="hero-nav next" aria-label="Next champion"
-            onClick={() => advance(1)}>›</button>
-          <div className="hero-dots">
-            {slides.map((s, i) => (
-              <button
-                key={s.id}
-                className={`hero-dot${i === index ? ' active' : ''}`}
-                aria-label={`Show ${s.id}`}
-                onClick={() => setIndex(i)}
-              />
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 }
