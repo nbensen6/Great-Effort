@@ -145,20 +145,4 @@ router.patch('/users/:id/role', authenticateToken, (req, res) => {
   }
 });
 
-// Bootstrap admin (one-time use to make Bensen admin)
-router.post('/bootstrap-admin', (req, res) => {
-  try {
-    const user = db.prepare('SELECT * FROM users WHERE username = ?').get('Bensen');
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    db.prepare('UPDATE users SET role = ? WHERE username = ?').run('admin', 'Bensen');
-    res.json({ success: true, message: 'Bensen is now admin' });
-  } catch (error) {
-    console.error('Error bootstrapping admin:', error);
-    res.status(500).json({ error: 'Failed to bootstrap admin' });
-  }
-});
-
 module.exports = router;
