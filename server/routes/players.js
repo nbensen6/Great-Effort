@@ -182,6 +182,67 @@ router.patch('/:id/opgg', authenticateToken, (req, res) => {
   }
 });
 
+// Claim a roster card as your own. Lets a newly registered player attach
+// themselves to their card without an admin doing it by hand.
+router.post('/:id/claim', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const player = db.prepare('SELECT * FROM players WHERE id = ?').get(id);
+    if (!player) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+    if (player.user_id !== null && player.user_id !== req.user.id) {
+      return res.status(409).json({ error: 'That roster card is already claimed' });
+    }
+
+    // players.user_id is UNIQUE, so one account maps to at most one card.
+    const existing = db.prepare('SELECT id FROM players WHERE user_id = ?').get(req.user.id);
+    if (existing && existing.id !== player.id) {
+      return res.status(409).json({
+        error: 'Your account is already linked to another roster card. Release that one first.'
+      });
+    }
+
+    db.prepare('UPDATE players SET user_id = ? WHERE id = ?').run(req.user.id, id);
+
+    const updated = db.prepare(`
+      SELECT p.*, u.username FROM players p
+      LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?
+    `).get(id);
+    res.json(updated);
+  } catch (error) {
+    console.error('Error claiming player:', error);
+    res.status(500).json({ error: 'Failed to claim roster card' });
+  }
+});
+
+// Release a claim. Own card only, unless admin.
+router.post('/:id/unclaim', authenticateToken, (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const player = db.prepare('SELECT * FROM players WHERE id = ?').get(id);
+    if (!player) {
+      return res.status(404).json({ error: 'Player not found' });
+    }
+    if (req.user.role !== 'admin' && player.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    db.prepare('UPDATE players SET user_id = NULL WHERE id = ?').run(id);
+
+    const updated = db.prepare(`
+      SELECT p.*, u.username FROM players p
+      LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?
+    `).get(id);
+    res.json(updated);
+  } catch (error) {
+    console.error('Error releasing player:', error);
+    res.status(500).json({ error: 'Failed to release roster card' });
+  }
+});
+
 // Sync Riot data for a player
 router.post('/:id/sync-riot', authenticateToken, async (req, res) => {
   try {

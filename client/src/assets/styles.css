@@ -1017,6 +1017,9 @@ tr:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 1.5rem;
+  /* Without this, grid stretches every card to the tallest in its row and a
+     collapsed card keeps its original height. */
+  align-items: start;
 }
 
 .player-card {
@@ -1375,6 +1378,110 @@ tr:hover {
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
+}
+
+/* Collapsed player cards keep the header (avatar, rank, role) and hide the
+   rest, so the roster stays scannable at five players. */
+.player-card.collapsed > *:not(.player-card-header):not(.player-card-actions) {
+  display: none;
+}
+
+.player-card.collapsed .player-card-header {
+  margin-bottom: 0;
+}
+
+.collapse-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapse-btn:hover {
+  color: var(--riot-red);
+  border-color: var(--riot-red);
+}
+
+/* Account <-> roster card linkage */
+.claim-badge {
+  margin-left: 0.5rem;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.1rem 0.35rem;
+  vertical-align: middle;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.claim-badge.mine {
+  color: var(--riot-red);
+  border-color: var(--riot-red);
+}
+
+.claim-btn {
+  margin: 0.35rem 0;
+  font-size: 0.7rem;
+  padding: 0.2rem 0.6rem;
+}
+
+/* Editable suggestion cards */
+.comp-suggestion-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.comp-suggestion-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.comp-suggestion-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.comp-edited-flag {
+  margin-left: 0.5rem;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--riot-red);
+  border: 1px solid var(--riot-red);
+  padding: 0.05rem 0.3rem;
+  vertical-align: middle;
+}
+
+.comp-champ-editable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.comp-champ-select {
+  max-width: 104px;
+  font-size: 0.7rem;
+  padding: 0.2rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.comp-champ-select:focus {
+  outline: none;
+  border-color: var(--riot-red);
 }
 
 /* Team Compositions */

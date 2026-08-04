@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import PageBackground from '../components/PageBackground';
@@ -68,6 +68,25 @@ function Roster() {
   });
 
   const [champions, setChampions] = useState([]);
+
+  // Per-suggestion champion overrides, keyed by suggestion id. Absent roles
+  // fall back to whatever the generator produced from the champion pools.
+  const [suggestionEdits, setSuggestionEdits] = useState({});
+  const [savingSuggestion, setSavingSuggestion] = useState(null);
+
+  // Saved-composition inline editing
+  const [editingComp, setEditingComp] = useState(null); // composition id
+  const [compDraft, setCompDraft] = useState(null);
+  const [savingComp, setSavingComp] = useState(false);
+
+  // Collapsed player cards, by player id
+  const [collapsedPlayers, setCollapsedPlayers] = useState(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('collapsedPlayers') || '[]'));
+    } catch (e) {
+      return new Set();
+    }
+  });
 
   // Champion pool editor state
   const [editingPool, setEditingPool] = useState(null); // player id
@@ -358,47 +377,159 @@ function Roster() {
     return `https://www.op.gg/summoners/${region}/${encodeURIComponent(formattedName)}`;
   };
 
-  // Generate composition suggestions based on player champion pools
-  const getCompSuggestions = () => {
-    const suggestions = [];
-    const playersByRole = {};
+  const COMP_ROLES = ['top', 'jungle', 'mid', 'adc', 'support'];
+  const ROLE_BY_SLOT = { top: 'Top', jungle: 'Jungle', mid: 'Mid', adc: 'ADC', support: 'Support' };
 
+  // Every champion each role's player can actually play, tagged with the tier
+  // and note from their pool, for the suggestion dropdowns.
+  const poolOptionsByRole = useMemo(() => {
+    const map = {};
     players.forEach(p => {
-      if (p.role && p.champion_pool) {
-        playersByRole[p.role] = p.champion_pool.split(',').map(c => c.trim());
-      }
+      if (!p.role) return;
+      const pool = normalizePool(p.champion_pool_data);
+      map[p.role] = TIER_KEYS.flatMap(tier =>
+        pool[tier].map(e => ({ id: e.id, tier, note: e.note }))
+      );
+    });
+    return map;
+  }, [players]);
+
+  // Suggestions are seeded from the draft tiers rather than an arbitrary slice
+  // of the flat pool, so each one means something: what we default to, what we
+  // pivot to after seeing the enemy, and what we save for specific drafts.
+  const getCompSuggestions = () => {
+    const byRole = poolOptionsByRole;
+    if (Object.keys(byRole).length < 3) return [];
+
+    const pick = (role, tier) => byRole[role]?.find(c => c.tier === tier)?.id;
+    const mainOf = (role) => pick(role, 'main') || byRole[role]?.[0]?.id;
+
+    const build = (id, name, hint, chooser) => ({
+      id,
+      name,
+      hint,
+      champions: COMP_ROLES.reduce((acc, slot) => {
+        acc[slot] = chooser(ROLE_BY_SLOT[slot]);
+        return acc;
+      }, {})
     });
 
-    // Simple suggestion: first champion from each player's pool
-    if (Object.keys(playersByRole).length >= 3) {
-      suggestions.push({
-        name: 'Main Comfort Picks',
-        champions: {
-          top: playersByRole['Top']?.[0],
-          jungle: playersByRole['Jungle']?.[0],
-          mid: playersByRole['Mid']?.[0],
-          adc: playersByRole['ADC']?.[0],
-          support: playersByRole['Support']?.[0]
-        }
+    const suggestions = [
+      build('main', 'Main Comfort Picks', 'First pick from every pool',
+        (role) => mainOf(role)),
+      build('counter', 'Counter Comp', 'Counter picks where we have one',
+        (role) => pick(role, 'counter') || mainOf(role)),
+      build('situational', 'Situational', 'Situational picks where we have one',
+        (role) => pick(role, 'situational') || mainOf(role))
+    ];
+
+    // Drop any suggestion that ended up identical to Main Comfort Picks.
+    const key = (s) => COMP_ROLES.map(r => s.champions[r] || '-').join('|');
+    const mainKey = key(suggestions[0]);
+    return suggestions.filter((s, i) => i === 0 || key(s) !== mainKey);
+  };
+
+  const suggestionChampions = (s) => ({ ...s.champions, ...(suggestionEdits[s.id] || {}) });
+
+  const setSuggestionChampion = (suggestionId, slot, champId) => {
+    setSuggestionEdits(prev => ({
+      ...prev,
+      [suggestionId]: { ...(prev[suggestionId] || {}), [slot]: champId }
+    }));
+  };
+
+  const resetSuggestion = (suggestionId) => {
+    setSuggestionEdits(prev => {
+      const next = { ...prev };
+      delete next[suggestionId];
+      return next;
+    });
+  };
+
+  const handleSaveSuggestion = async (suggestion) => {
+    setSavingSuggestion(suggestion.id);
+    try {
+      const champs = suggestionChampions(suggestion);
+      const response = await api.post('/compositions', {
+        name: suggestion.name,
+        description: suggestion.hint,
+        top_champion: champs.top || '',
+        jungle_champion: champs.jungle || '',
+        mid_champion: champs.mid || '',
+        adc_champion: champs.adc || '',
+        support_champion: champs.support || '',
+        tags: 'from suggestion'
       });
-
-      // Second suggestion: second champion from each pool if available
-      const hasSecondPicks = Object.values(playersByRole).some(pool => pool.length > 1);
-      if (hasSecondPicks) {
-        suggestions.push({
-          name: 'Flex Picks',
-          champions: {
-            top: playersByRole['Top']?.[1] || playersByRole['Top']?.[0],
-            jungle: playersByRole['Jungle']?.[1] || playersByRole['Jungle']?.[0],
-            mid: playersByRole['Mid']?.[1] || playersByRole['Mid']?.[0],
-            adc: playersByRole['ADC']?.[1] || playersByRole['ADC']?.[0],
-            support: playersByRole['Support']?.[1] || playersByRole['Support']?.[0]
-          }
-        });
-      }
+      setCompositions([response.data, ...compositions]);
+    } catch (err) {
+      showAlert(err.response?.data?.error || 'Failed to save composition');
+    } finally {
+      setSavingSuggestion(null);
     }
+  };
 
-    return suggestions;
+  const startEditComp = (comp) => {
+    setEditingComp(comp.id);
+    setCompDraft({
+      name: comp.name || '',
+      description: comp.description || '',
+      top_champion: comp.top_champion || '',
+      jungle_champion: comp.jungle_champion || '',
+      mid_champion: comp.mid_champion || '',
+      adc_champion: comp.adc_champion || '',
+      support_champion: comp.support_champion || '',
+      tags: comp.tags || ''
+    });
+  };
+
+  const handleUpdateComposition = async (e) => {
+    e.preventDefault();
+    setSavingComp(true);
+    try {
+      const response = await api.put(`/compositions/${editingComp}`, compDraft);
+      setCompositions(compositions.map(c => (c.id === editingComp ? response.data : c)));
+      setEditingComp(null);
+      setCompDraft(null);
+    } catch (err) {
+      showAlert(err.response?.data?.error || 'Failed to update composition');
+    } finally {
+      setSavingComp(false);
+    }
+  };
+
+  // The roster card this account is attached to, if any.
+  const myPlayer = players.find(p => user && p.user_id === user.id) || null;
+
+  const handleClaimPlayer = async (playerId) => {
+    try {
+      const response = await api.post(`/players/${playerId}/claim`);
+      setPlayers(players.map(p => (p.id === playerId ? { ...p, ...response.data } : p)));
+    } catch (err) {
+      showAlert(err.response?.data?.error || 'Failed to claim roster card');
+    }
+  };
+
+  const handleUnclaimPlayer = async (playerId) => {
+    const confirmed = await confirm(
+      'Unlink your account from this roster card?',
+      { title: 'Release Card', confirmText: 'Unlink' }
+    );
+    if (!confirmed) return;
+    try {
+      const response = await api.post(`/players/${playerId}/unclaim`);
+      setPlayers(players.map(p => (p.id === playerId ? { ...p, ...response.data } : p)));
+    } catch (err) {
+      showAlert(err.response?.data?.error || 'Failed to release roster card');
+    }
+  };
+
+  const togglePlayerCollapsed = (playerId) => {
+    setCollapsedPlayers(prev => {
+      const next = new Set(prev);
+      if (next.has(playerId)) next.delete(playerId); else next.add(playerId);
+      localStorage.setItem('collapsedPlayers', JSON.stringify([...next]));
+      return next;
+    });
   };
 
   // Get users not yet linked to a player
@@ -540,9 +671,20 @@ function Roster() {
             const championStats = parseChampionStats(player);
 
             return (
-              <div key={player.id} className="card player-card">
+              <div
+                key={player.id}
+                className={`card player-card${collapsedPlayers.has(player.id) ? ' collapsed' : ''}`}
+              >
                 {/* Action Buttons */}
                 <div className="player-card-actions">
+                  <button
+                    className="collapse-btn"
+                    onClick={() => togglePlayerCollapsed(player.id)}
+                    aria-expanded={!collapsedPlayers.has(player.id)}
+                    title={collapsedPlayers.has(player.id) ? 'Expand' : 'Collapse'}
+                  >
+                    {collapsedPlayers.has(player.id) ? '▸' : '▾'}
+                  </button>
                   {isAdmin && (
                     <button
                       className="delete-btn"
@@ -570,7 +712,31 @@ function Roster() {
 
                   {/* Player Info */}
                   <div className="player-info">
-                    <h3 className="player-name">{player.summoner_name}</h3>
+                    <h3 className="player-name">
+                      {player.summoner_name}
+                      {player.user_id && (
+                        <span className={`claim-badge${user && player.user_id === user.id ? ' mine' : ''}`}>
+                          {user && player.user_id === user.id ? 'You' : player.username}
+                        </span>
+                      )}
+                    </h3>
+
+                    {user && !player.user_id && !myPlayer && (
+                      <button
+                        className="btn btn-primary btn-small claim-btn"
+                        onClick={() => handleClaimPlayer(player.id)}
+                      >
+                        This is me
+                      </button>
+                    )}
+                    {user && player.user_id === user.id && (
+                      <button
+                        className="btn btn-secondary btn-small claim-btn"
+                        onClick={() => handleUnclaimPlayer(player.id)}
+                      >
+                        Unlink
+                      </button>
+                    )}
 
                     {/* Role + Level */}
                     <div className="player-role-row">
@@ -848,29 +1014,77 @@ function Roster() {
             <h3 className="card-title">Suggested Compositions</h3>
           </div>
           <p style={{color: 'var(--text-secondary)', marginBottom: '1rem', fontSize: '0.9rem'}}>
-            Based on player champion pools
+            Seeded from each player's draft tiers. {user ? 'Swap any pick, then save it as a composition.' : 'Sign in to edit these.'}
           </p>
           <div className="comp-suggestions">
-            {compSuggestions.map((suggestion, idx) => (
-              <div key={idx} className="comp-suggestion-card">
-                <h4>{suggestion.name}</h4>
-                <div className="comp-champions">
-                  {['top', 'jungle', 'mid', 'adc', 'support'].map(role => (
-                    suggestion.champions[role] && (
-                      <div key={role} className="comp-champ">
-                        <img
-                          src={getChampionImage(suggestion.champions[role])}
-                          alt={suggestion.champions[role]}
-                          title={`${role}: ${suggestion.champions[role]}`}
-                          onError={(e) => { e.target.style.display = 'none'; }}
-                        />
-                        <span>{role}</span>
+            {compSuggestions.map(suggestion => {
+              const champs = suggestionChampions(suggestion);
+              const edited = !!suggestionEdits[suggestion.id];
+              return (
+                <div key={suggestion.id} className="comp-suggestion-card">
+                  <div className="comp-suggestion-head">
+                    <div>
+                      <h4>{suggestion.name}{edited && <span className="comp-edited-flag">edited</span>}</h4>
+                      <span className="comp-suggestion-hint">{suggestion.hint}</span>
+                    </div>
+                    {user && (
+                      <div className="comp-suggestion-actions">
+                        {edited && (
+                          <button className="btn btn-secondary btn-small"
+                            onClick={() => resetSuggestion(suggestion.id)}>Reset</button>
+                        )}
+                        <button className="btn btn-primary btn-small"
+                          disabled={savingSuggestion === suggestion.id}
+                          onClick={() => handleSaveSuggestion(suggestion)}>
+                          {savingSuggestion === suggestion.id ? 'Saving...' : 'Save as Comp'}
+                        </button>
                       </div>
-                    )
-                  ))}
+                    )}
+                  </div>
+                  <div className="comp-champions">
+                    {COMP_ROLES.map(slot => {
+                      const champId = champs[slot];
+                      const options = poolOptionsByRole[ROLE_BY_SLOT[slot]] || [];
+                      if (!user) {
+                        return champId && (
+                          <div key={slot} className="comp-champ">
+                            <img src={getChampionImage(champId)} alt={champId}
+                              title={`${slot}: ${champId}`}
+                              onError={(e) => { e.target.style.display = 'none'; }} />
+                            <span>{slot}</span>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={slot} className="comp-champ comp-champ-editable">
+                          <img
+                            src={getChampionImage(champId)}
+                            alt={champId || slot}
+                            title={champId || slot}
+                            style={{ visibility: champId ? 'visible' : 'hidden' }}
+                            onError={(e) => { e.target.style.visibility = 'hidden'; }}
+                          />
+                          <select
+                            className="comp-champ-select"
+                            value={champId || ''}
+                            onChange={(e) => setSuggestionChampion(suggestion.id, slot, e.target.value)}
+                          >
+                            <option value="">— none —</option>
+                            {options.map(o => (
+                              <option key={o.id} value={o.id}>
+                                {(champions.find(c => c.id === o.id)?.name || o.id)}
+                                {o.note ? ` — ${o.note}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <span>{slot}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -959,14 +1173,75 @@ function Roster() {
                     )}
                   </div>
                   {user && (
-                    <button
-                      className="btn btn-danger btn-small"
-                      onClick={() => handleDeleteComposition(comp.id)}
-                    >
-                      Delete
-                    </button>
+                    <div className="comp-suggestion-actions">
+                      <button
+                        className="btn btn-secondary btn-small"
+                        onClick={() => (editingComp === comp.id ? setEditingComp(null) : startEditComp(comp))}
+                      >
+                        {editingComp === comp.id ? 'Cancel' : 'Edit'}
+                      </button>
+                      <button
+                        className="btn btn-danger btn-small"
+                        onClick={() => handleDeleteComposition(comp.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   )}
                 </div>
+
+                {editingComp === comp.id && compDraft && (
+                  <form onSubmit={handleUpdateComposition} className="comp-form mb-3">
+                    <div className="form-group">
+                      <label>Composition Name</label>
+                      <input type="text" value={compDraft.name} required
+                        onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label>Description</label>
+                      <textarea rows={2} value={compDraft.description}
+                        onChange={(e) => setCompDraft({ ...compDraft, description: e.target.value })} />
+                    </div>
+                    <div className="comp-champion-selectors">
+                      {['Top', 'Jungle', 'Mid', 'ADC', 'Support'].map(role => {
+                        const field = `${role.toLowerCase()}_champion`;
+                        const pool = poolOptionsByRole[role] || [];
+                        return (
+                          <div key={role} className="form-group" style={{ flex: 1, minWidth: '120px' }}>
+                            <label>{role}</label>
+                            <select value={compDraft[field]}
+                              onChange={(e) => setCompDraft({ ...compDraft, [field]: e.target.value })}>
+                              <option value="">Select...</option>
+                              {pool.length > 0 && (
+                                <optgroup label={`${role} pool`}>
+                                  {pool.map(o => (
+                                    <option key={`pool-${o.id}`} value={o.id}>
+                                      {champions.find(c => c.id === o.id)?.name || o.id}
+                                      {o.note ? ` — ${o.note}` : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              <optgroup label="All champions">
+                                {champions.map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </optgroup>
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="form-group">
+                      <label>Tags (comma separated)</label>
+                      <input type="text" value={compDraft.tags}
+                        onChange={(e) => setCompDraft({ ...compDraft, tags: e.target.value })} />
+                    </div>
+                    <button type="submit" className="btn btn-primary" disabled={savingComp}>
+                      {savingComp ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </form>
+                )}
                 {comp.description && (
                   <p style={{color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.5rem'}}>
                     {comp.description}
