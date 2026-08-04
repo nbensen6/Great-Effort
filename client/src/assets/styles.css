@@ -1452,7 +1452,9 @@ tr:hover {
    it never intercepts clicks and page content sits above it from the top. */
 .hero-carousel {
   position: fixed;
-  inset: 70px 0 0 0;      /* below the navbar */
+  /* Starts well below the navbar and the hero buttons, so champion faces are
+     not sitting behind the page's top controls. */
+  inset: 250px 0 0 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
@@ -1462,7 +1464,7 @@ tr:hover {
   position: absolute;
   inset: 0;
   background-size: cover;
-  background-position: center 26%;
+  background-position: center 20%;
   opacity: 0;
   transform: scale(1.05);
   transition: opacity 1.6s ease, transform 9s linear;
@@ -1478,11 +1480,11 @@ tr:hover {
 /* Dissolve the art into the page on every edge so there is no visible frame. */
 .hero-carousel {
   -webkit-mask-image:
-    linear-gradient(to bottom, transparent 0%, #000 18%, #000 55%, transparent 92%),
+    linear-gradient(to bottom, transparent 0%, #000 12%, #000 60%, transparent 95%),
     linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%);
   -webkit-mask-composite: source-in;
   mask-image:
-    linear-gradient(to bottom, transparent 0%, #000 18%, #000 55%, transparent 92%),
+    linear-gradient(to bottom, transparent 0%, #000 12%, #000 60%, transparent 95%),
     linear-gradient(to right, transparent 0%, #000 14%, #000 86%, transparent 100%);
   mask-composite: intersect;
 }
