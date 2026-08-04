@@ -6,6 +6,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import AlertDialog from '../components/AlertDialog';
 import { useConfirm, useAlert } from '../hooks/useConfirm';
 import { POOL_TIERS, TIER_KEYS, emptyPool, normalizePool } from '../lib/championPool';
+import { toChampionList } from '../lib/champions';
 
 const ROLE_ICONS = {
   Top: '⚔️',
@@ -135,8 +136,7 @@ function Roster() {
       // Also fetch champion list for composition selector
       const champResponse = await fetch(`https://ddragon.leagueoflegends.com/cdn/${versions[0]}/data/en_US/champion.json`);
       const data = await champResponse.json();
-      const champList = Object.values(data.data).map(c => ({ id: c.id, name: c.name }));
-      setChampions(champList.sort((a, b) => a.name.localeCompare(b.name)));
+      setChampions(toChampionList(data.data, versions[0]));
     } catch (err) {
       console.error('Failed to fetch version');
     }

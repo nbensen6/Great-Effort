@@ -3,6 +3,7 @@ import api from '../services/api';
 import FlowchartCanvas from '../components/FlowchartCanvas';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useConfirm } from '../hooks/useConfirm';
+import { toChampionList } from '../lib/champions';
 
 const NOTE_CATEGORIES = ['General', 'Draft Tendencies', 'Playstyle', 'Weaknesses', 'Player Notes'];
 
@@ -85,12 +86,7 @@ function Scouting() {
       const champResponse = await fetch(`https://ddragon.leagueoflegends.com/cdn/${latestVersion}/data/en_US/champion.json`);
       const data = await champResponse.json();
 
-      const champList = Object.values(data.data).map(champ => ({
-        id: champ.id,
-        name: champ.name,
-        image: `https://ddragon.leagueoflegends.com/cdn/${latestVersion}/img/champion/${champ.id}.png`
-      }));
-      setChampions(champList.sort((a, b) => a.name.localeCompare(b.name)));
+      setChampions(toChampionList(data.data, latestVersion));
     } catch (err) {
       console.error('Failed to load champions');
     }

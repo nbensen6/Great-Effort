@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 import PageBackground from '../components/PageBackground';
+import { toChampionList } from '../lib/champions';
 
 const ROLES = ['All', 'Top', 'Jungle', 'Mid', 'ADC', 'Support'];
 
@@ -68,14 +69,7 @@ function DraftHelper() {
       const champResponse = await fetch(`https://ddragon.leagueoflegends.com/cdn/${latestVersion}/data/en_US/champion.json`);
       const data = await champResponse.json();
 
-      const champList = Object.values(data.data).map(champ => ({
-        id: champ.id,
-        name: champ.name,
-        tags: champ.tags,
-        image: `https://ddragon.leagueoflegends.com/cdn/${latestVersion}/img/champion/${champ.id}.png`
-      }));
-
-      setChampions(champList.sort((a, b) => a.name.localeCompare(b.name)));
+      setChampions(toChampionList(data.data, latestVersion));
     } catch (err) {
       setError('Failed to load champions');
     } finally {
