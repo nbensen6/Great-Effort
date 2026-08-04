@@ -2707,6 +2707,17 @@ tr:hover {
   background: var(--bg-primary);
 }
 
+/* On the standalone Flowcharts page the canvas is the page itself, not a modal
+   floating over one, so it must not cover the header and team selector. */
+.fc-page .fc-canvas-overlay {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  height: calc(100vh - 230px);
+  min-height: 520px;
+  border: 1px solid var(--border-color);
+}
+
 .fc-drafts-sidebar {
   width: 240px;
   background: var(--bg-secondary);
@@ -3146,10 +3157,12 @@ tr:hover {
 }
 
 .fc-shape-champion {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid var(--border-color);
+  width: 32px;
+  height: 32px;
+  /* Was a 50% circle, which cropped the corners off the square portrait. */
+  border-radius: 0;
+  object-fit: contain;
+  border: 1px solid var(--border-color);
   flex-shrink: 0;
 }
 
@@ -3215,6 +3228,10 @@ tr:hover {
 
 .fc-champ-grid {
   flex: 1;
+  /* Required: a flex child defaults to min-height:auto, so this grid would grow
+     to its full content height and never scroll — the sidebar's overflow:hidden
+     then clipped it, leaving only the first row visible. */
+  min-height: 0;
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -3240,7 +3257,10 @@ tr:hover {
 
 .fc-champ-item img {
   width: 100%;
+  /* Square source, square box: shows the whole portrait rather than a slice. */
+  aspect-ratio: 1 / 1;
   height: auto;
+  object-fit: contain;
   display: block;
 }
 

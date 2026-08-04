@@ -124,6 +124,7 @@ function Flowcharts() {
           <p>Flowcharts are planned against a specific opponent. Add a team on the Scouting page first.</p>
         </div>
       ) : (
+        <div className="fc-page">
         <FlowchartCanvas
           key={selectedTeamId}
           teamId={selectedTeam?.id}
@@ -137,6 +138,7 @@ function Flowcharts() {
           onDelete={handleDeleteFlowchart}
           onClose={() => fetchTeamData(selectedTeamId)}
         />
+        </div>
       )}
 
       <ConfirmDialog {...confirmDialogProps} />
