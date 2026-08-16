@@ -42,11 +42,8 @@ function Scouting() {
   const [opggUrl, setOpggUrl] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
-
-  // op.gg tab state
-  const [opggLinkInput, setOpggLinkInput] = useState('');
-  const [savingLink, setSavingLink] = useState(false);
-  const [linkError, setLinkError] = useState('');
+  const [importElapsed, setImportElapsed] = useState(0);
+  const [importPlayerCount, setImportPlayerCount] = useState(0);
 
   // Flowcharts tab state
   const [teamFlowcharts, setTeamFlowcharts] = useState([]);
@@ -108,15 +105,6 @@ function Scouting() {
       fetchTeamData(selectedTeam.id);
     }
   }, [selectedTeam, fetchTeamData]);
-
-  // Keyed on the id, not the whole team, so saving the link doesn't stomp the
-  // field the user is still typing in.
-  const selectedTeamId = selectedTeam?.id;
-  useEffect(() => {
-    setOpggLinkInput(selectedTeam?.opgg_url || '');
-    setLinkError('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTeamId]);
 
   const handleSelectTeam = (team) => {
     setSelectedTeam(team);
@@ -387,8 +375,15 @@ function Scouting() {
     }
 
     setImporting(true);
+    setImportPlayerCount(parsed.players.length);
+    setImportElapsed(0);
+    const tickStart = Date.now();
+    const tick = setInterval(() => setImportElapsed(Math.round((Date.now() - tickStart) / 1000)), 1000);
+
     try {
-      // Step 1: Fetch player data from Riot API
+      // Step 1: Fetch player data from Riot API. Each player is fetched
+      // sequentially server-side (~8-10s each, Riot rate limits leave no
+      // real room to parallelize), so a full roster easily runs past a minute.
       const riotRes = await api.post('/riot/import-opgg', {
         players: parsed.players,
         region: parsed.region
@@ -422,54 +417,9 @@ function Scouting() {
     } catch (err) {
       setImportError(err?.response?.data?.error || 'Failed to import players');
     } finally {
+      clearInterval(tick);
       setImporting(false);
     }
-  };
-
-  // Only http(s) is safe to hand to an anchor href; the server enforces the
-  // same rule on save, this guards links already in the database.
-  const safeHref = (url) => {
-    if (!url) return null;
-    try {
-      const { protocol } = new URL(url);
-      return (protocol === 'http:' || protocol === 'https:') ? url : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const saveOpggLink = async (url) => {
-    setSavingLink(true);
-    setLinkError('');
-
-    try {
-      const res = await api.patch(`/scouting/teams/${selectedTeam.id}/opgg`, { opggUrl: url });
-      setTeams(prev => prev.map(t => t.id === res.data.id ? { ...t, opgg_url: res.data.opgg_url } : t));
-      setSelectedTeam(prev => ({ ...prev, opgg_url: res.data.opgg_url }));
-      setOpggLinkInput(res.data.opgg_url || '');
-    } catch (err) {
-      setLinkError(err?.response?.data?.error || 'Failed to save link');
-    } finally {
-      setSavingLink(false);
-    }
-  };
-
-  const handleSaveOpggLink = () => {
-    const trimmed = opggLinkInput.trim();
-    if (!trimmed) {
-      setLinkError('Paste a link first');
-      return;
-    }
-    saveOpggLink(trimmed);
-  };
-
-  const handleClearOpggLink = async () => {
-    const confirmed = await confirm('Remove the saved op.gg link for this team?', {
-      title: 'Remove Link',
-      confirmText: 'Remove'
-    });
-    if (!confirmed) return;
-    saveOpggLink('');
   };
 
   const handleAttachFlowchart = async () => {
@@ -672,12 +622,6 @@ function Scouting() {
                 Flowcharts ({teamFlowcharts.length})
               </button>
               <button
-                className={`team-tab ${activeTab === 'opgg' ? 'active' : ''}`}
-                onClick={() => setActiveTab('opgg')}
-              >
-                op.gg {selectedTeam.opgg_url ? '✓' : ''}
-              </button>
-              <button
                 className={`team-tab ${activeTab === 'drafts' ? 'active' : ''}`}
                 onClick={() => setActiveTab('drafts')}
               >
@@ -789,67 +733,6 @@ function Scouting() {
                 </div>
               );
             })()}
-
-            {activeTab === 'opgg' && (
-              <div className="opgg-tab">
-                <label style={{fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block'}}>
-                  Saved op.gg link for {selectedTeam.name} — multi-search, team page, whatever you use
-                </label>
-                <div style={{display: 'flex', gap: '0.5rem'}}>
-                  <input
-                    type="text"
-                    value={opggLinkInput}
-                    onChange={(e) => setOpggLinkInput(e.target.value)}
-                    placeholder="https://www.op.gg/multisearch/na?summoners=..."
-                    disabled={savingLink}
-                    style={{
-                      flex: 1,
-                      padding: '0.5rem',
-                      borderRadius: '4px',
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-tertiary)',
-                      color: 'var(--text-primary)'
-                    }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSaveOpggLink()}
-                  />
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleSaveOpggLink}
-                    disabled={savingLink}
-                  >
-                    {savingLink ? 'Saving...' : 'Save'}
-                  </button>
-                  {selectedTeam.opgg_url && (
-                    <button
-                      className="btn btn-secondary"
-                      onClick={handleClearOpggLink}
-                      disabled={savingLink}
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {linkError && <div className="error" style={{marginTop: '0.5rem'}}>{linkError}</div>}
-
-                {safeHref(selectedTeam.opgg_url) ? (
-                  <div style={{marginTop: '1rem'}}>
-                    <a
-                      href={safeHref(selectedTeam.opgg_url)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="opgg-team-link"
-                    >
-                      Open {selectedTeam.name} on op.gg →
-                    </a>
-                  </div>
-                ) : (
-                  <p style={{color: 'var(--text-secondary)', marginTop: '1rem', fontSize: '0.9rem'}}>
-                    No link saved yet. Paste one above and hit Save.
-                  </p>
-                )}
-              </div>
-            )}
 
             {activeTab === 'images' && (
               <div className="images-tab">
@@ -1071,7 +954,9 @@ function Scouting() {
                   )}
                   {importing && (
                     <div style={{marginTop: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.85rem'}}>
-                      Fetching player data from Riot API... This may take 15-30 seconds.
+                      Fetching player data from Riot API — {importPlayerCount > 1
+                        ? `players are fetched one at a time, so ${importPlayerCount} can take a minute or more.`
+                        : 'usually 5-10 seconds for one player.'} Elapsed: {importElapsed}s
                     </div>
                   )}
                 </div>

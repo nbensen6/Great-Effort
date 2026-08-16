@@ -128,44 +128,6 @@ router.put('/teams/:id', authenticateToken, (req, res) => {
   }
 });
 
-// The link is rendered as an anchor in the client, so anything but http(s)
-// (javascript:, data:) has to be rejected here rather than at render time only.
-const isHttpUrl = (value) => {
-  try {
-    const { protocol } = new URL(value);
-    return protocol === 'http:' || protocol === 'https:';
-  } catch {
-    return false;
-  }
-};
-
-// Set or clear a team's saved op.gg link
-router.patch('/teams/:id/opgg', authenticateToken, (req, res) => {
-  try {
-    const { id } = req.params;
-    const { opggUrl } = req.body;
-
-    const team = db.prepare('SELECT * FROM enemy_teams WHERE id = ?').get(id);
-    if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
-    }
-
-    const trimmed = (opggUrl || '').trim();
-    if (trimmed && !isHttpUrl(trimmed)) {
-      return res.status(400).json({ error: 'Link must be a valid http:// or https:// URL' });
-    }
-
-    db.prepare('UPDATE enemy_teams SET opgg_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .run(trimmed || null, id);
-
-    const updated = db.prepare('SELECT * FROM enemy_teams WHERE id = ?').get(id);
-    res.json(updated);
-  } catch (error) {
-    console.error('Error saving op.gg link:', error);
-    res.status(500).json({ error: 'Failed to save op.gg link' });
-  }
-});
-
 // Delete enemy team
 router.delete('/teams/:id', authenticateToken, (req, res) => {
   try {
