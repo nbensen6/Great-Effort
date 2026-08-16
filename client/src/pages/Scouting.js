@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useConfirm } from '../hooks/useConfirm';
@@ -41,6 +42,14 @@ function Scouting() {
   const [opggUrl, setOpggUrl] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
+  const [importElapsed, setImportElapsed] = useState(0);
+  const [importPlayerCount, setImportPlayerCount] = useState(0);
+
+  // Flowcharts tab state
+  const [teamFlowcharts, setTeamFlowcharts] = useState([]);
+  const [flowchartLibrary, setFlowchartLibrary] = useState([]);
+  const [importFlowchartId, setImportFlowchartId] = useState('');
+  const [attaching, setAttaching] = useState(false);
 
 
   useEffect(() => {
@@ -71,16 +80,21 @@ function Scouting() {
 
   const fetchTeamData = useCallback(async (teamId) => {
     try {
-      const [notesRes, imagesRes, draftsRes, playersRes] = await Promise.all([
+      const [notesRes, imagesRes, draftsRes, playersRes, flowchartsRes, libraryRes] = await Promise.all([
         api.get(`/scouting/teams/${teamId}/notes`),
         api.get(`/scouting/teams/${teamId}/images`),
         api.get(`/scouting/teams/${teamId}/drafts`),
-        api.get(`/scouting/teams/${teamId}/players`)
+        api.get(`/scouting/teams/${teamId}/players`),
+        api.get(`/scouting/teams/${teamId}/flowcharts`),
+        api.get('/scouting/flowcharts')
       ]);
       setTeamNotes(notesRes.data);
       setTeamImages(imagesRes.data);
       setTeamDrafts(draftsRes.data);
       setTeamPlayers(playersRes.data);
+      setTeamFlowcharts(flowchartsRes.data);
+      setFlowchartLibrary(libraryRes.data);
+      setImportFlowchartId('');
     } catch (err) {
       setError('Failed to load team data');
     }
@@ -178,10 +192,10 @@ function Scouting() {
   };
 
   const handleDeleteTeam = async (teamId) => {
-    const confirmed = await confirm('Delete this team and all its notes/images?', {
-      title: 'Delete Team',
-      confirmText: 'Delete'
-    });
+    const confirmed = await confirm(
+      'Delete this team and all its notes, images, players and saved drafts? Flowcharts are kept in your library.',
+      { title: 'Delete Team', confirmText: 'Delete' }
+    );
     if (!confirmed) return;
 
     try {
@@ -361,8 +375,15 @@ function Scouting() {
     }
 
     setImporting(true);
+    setImportPlayerCount(parsed.players.length);
+    setImportElapsed(0);
+    const tickStart = Date.now();
+    const tick = setInterval(() => setImportElapsed(Math.round((Date.now() - tickStart) / 1000)), 1000);
+
     try {
-      // Step 1: Fetch player data from Riot API
+      // Step 1: Fetch player data from Riot API. Each player is fetched
+      // sequentially server-side (~8-10s each, Riot rate limits leave no
+      // real room to parallelize), so a full roster easily runs past a minute.
       const riotRes = await api.post('/riot/import-opgg', {
         players: parsed.players,
         region: parsed.region
@@ -396,7 +417,42 @@ function Scouting() {
     } catch (err) {
       setImportError(err?.response?.data?.error || 'Failed to import players');
     } finally {
+      clearInterval(tick);
       setImporting(false);
+    }
+  };
+
+  const handleAttachFlowchart = async () => {
+    if (!importFlowchartId) return;
+    setAttaching(true);
+    try {
+      const res = await api.post(`/scouting/teams/${selectedTeam.id}/flowcharts/${importFlowchartId}`);
+      setTeamFlowcharts(prev => [res.data, ...prev]);
+      setFlowchartLibrary(prev => prev.map(f => f.id === res.data.id ? res.data : f));
+      setImportFlowchartId('');
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Failed to import flowchart');
+    } finally {
+      setAttaching(false);
+    }
+  };
+
+  // Detach only unlinks it from this team. The flowchart stays in the library.
+  const handleDetachFlowchart = async (flowchartId) => {
+    const confirmed = await confirm(
+      'Remove this flowchart from this team? It stays in your flowchart library.',
+      { title: 'Remove From Team', confirmText: 'Remove' }
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await api.delete(`/scouting/teams/${selectedTeam.id}/flowcharts/${flowchartId}`);
+      setTeamFlowcharts(prev => prev.filter(f => f.id !== flowchartId));
+      if (res.data?.id) {
+        setFlowchartLibrary(prev => prev.map(f => f.id === res.data.id ? res.data : f));
+      }
+    } catch (err) {
+      setError('Failed to remove flowchart from team');
     }
   };
 
@@ -560,6 +616,12 @@ function Scouting() {
                 Players ({teamPlayers.length})
               </button>
               <button
+                className={`team-tab ${activeTab === 'flowcharts' ? 'active' : ''}`}
+                onClick={() => setActiveTab('flowcharts')}
+              >
+                Flowcharts ({teamFlowcharts.length})
+              </button>
+              <button
                 className={`team-tab ${activeTab === 'drafts' ? 'active' : ''}`}
                 onClick={() => setActiveTab('drafts')}
               >
@@ -578,6 +640,99 @@ function Scouting() {
                 Notes ({teamNotes.length})
               </button>
             </div>
+
+            {activeTab === 'flowcharts' && (() => {
+              const attachedIds = new Set(teamFlowcharts.map(f => f.id));
+              const importable = flowchartLibrary.filter(f => !attachedIds.has(f.id));
+
+              return (
+                <div className="flowcharts-tab">
+                  <div className="import-section">
+                    <label style={{fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block'}}>
+                      Import a flowchart from your library. The same flowchart can be used against
+                      any number of teams — edits show up everywhere it's attached.
+                    </label>
+                    <div style={{display: 'flex', gap: '0.5rem'}}>
+                      <select
+                        value={importFlowchartId}
+                        onChange={(e) => setImportFlowchartId(e.target.value)}
+                        disabled={attaching || importable.length === 0}
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)'
+                        }}
+                      >
+                        <option value="">
+                          {importable.length === 0 ? 'Nothing left to import' : 'Choose a flowchart...'}
+                        </option>
+                        {importable.map(f => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}{f.teams?.length ? ` (also on ${f.teams.map(t => t.name).join(', ')})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleAttachFlowchart}
+                        disabled={attaching || !importFlowchartId}
+                      >
+                        {attaching ? 'Importing...' : 'Import'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {teamFlowcharts.length === 0 ? (
+                    <p style={{color: 'var(--text-secondary)', marginTop: '1rem'}}>
+                      No flowcharts on this team yet. Import one above, or build a new one on the{' '}
+                      <Link to="/flowcharts" style={{color: 'var(--accent-blue)'}}>Flowcharts page</Link>.
+                    </p>
+                  ) : (
+                    <div className="attached-flowcharts-list" style={{marginTop: '1rem'}}>
+                      {teamFlowcharts.map(fc => {
+                        let nodeCount = null;
+                        try {
+                          nodeCount = JSON.parse(fc.data)?.nodes?.length ?? null;
+                        } catch {
+                          nodeCount = null;
+                        }
+                        const alsoOn = (fc.teams || []).filter(t => t.id !== selectedTeam.id);
+
+                        return (
+                          <div key={fc.id} className="card mb-2">
+                            <div className="card-header">
+                              <div>
+                                <h4 style={{color: 'var(--accent-gold)'}}>{fc.name}</h4>
+                                <small style={{color: 'var(--text-secondary)'}}>
+                                  {nodeCount != null ? `${nodeCount} nodes | ` : ''}
+                                  updated {formatDate(fc.updated_at)} by {fc.author_name}
+                                  {alsoOn.length ? ` | also on ${alsoOn.map(t => t.name).join(', ')}` : ''}
+                                </small>
+                              </div>
+                              <div style={{display: 'flex', gap: '0.5rem'}}>
+                                <Link to="/flowcharts" className="btn btn-secondary btn-small">
+                                  Open
+                                </Link>
+                                <button
+                                  className="btn btn-danger btn-small"
+                                  onClick={() => handleDetachFlowchart(fc.id)}
+                                  title="Unlink from this team (keeps the flowchart)"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {activeTab === 'images' && (
               <div className="images-tab">
@@ -799,7 +954,9 @@ function Scouting() {
                   )}
                   {importing && (
                     <div style={{marginTop: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.85rem'}}>
-                      Fetching player data from Riot API... This may take 15-30 seconds.
+                      Fetching player data from Riot API — {importPlayerCount > 1
+                        ? `players are fetched one at a time, so ${importPlayerCount} can take a minute or more.`
+                        : 'usually 5-10 seconds for one player.'} Elapsed: {importElapsed}s
                     </div>
                   )}
                 </div>

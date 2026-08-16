@@ -5,13 +5,21 @@ const router = express.Router();
 
 const RIOT_API_KEY = process.env.RIOT_API_KEY;
 
+// Each import touches Riot up to ~14 times per player with no client-side
+// timeout on the request, so one stalled connection used to be able to hold
+// the whole import open (and the UI's spinner with it) far past what the
+// undici default (5 minutes) would ever surface as an error. Fail fast
+// instead — a single missed player degrades gracefully, the import moves on.
+const RIOT_REQUEST_TIMEOUT_MS = 10000;
+
 // Helper to make Riot API requests with rate limit retry
 const riotFetch = async (url, retries = 3) => {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const response = await fetch(url, {
       headers: {
         'X-Riot-Token': RIOT_API_KEY
-      }
+      },
+      signal: AbortSignal.timeout(RIOT_REQUEST_TIMEOUT_MS)
     });
 
     if (response.status === 429) {

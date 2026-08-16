@@ -316,20 +316,74 @@ try {
   db.exec(`ALTER TABLE players ADD COLUMN champion_pool_data TEXT`);
 } catch (e) {}
 
-// Draft flowcharts table
+// Draft flowcharts. These are standalone documents: a flowchart belongs to the
+// library, not to an opponent. Attaching one to an enemy team is a link in
+// flowchart_teams, so deleting a team drops the link and leaves the work alone.
 db.exec(`
   CREATE TABLE IF NOT EXISTS draft_flowcharts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    team_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     data TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (team_id) REFERENCES enemy_teams(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS flowchart_teams (
+    flowchart_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (flowchart_id, team_id),
+    FOREIGN KEY (flowchart_id) REFERENCES draft_flowcharts(id) ON DELETE CASCADE,
+    FOREIGN KEY (team_id) REFERENCES enemy_teams(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_flowchart_teams_team ON flowchart_teams(team_id);
 `);
+
+// Legacy databases have draft_flowcharts.team_id NOT NULL with an ON DELETE
+// CASCADE to enemy_teams, which destroyed flowcharts whenever an opponent was
+// deleted. SQLite cannot drop a column with a foreign key in place, so rebuild
+// the table and move the existing associations into flowchart_teams.
+const flowchartColumns = db.prepare('PRAGMA table_info(draft_flowcharts)').all();
+if (flowchartColumns.some(c => c.name === 'team_id')) {
+  console.log('Migrating draft_flowcharts: decoupling from enemy_teams...');
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      db.exec(`
+        INSERT OR IGNORE INTO flowchart_teams (flowchart_id, team_id)
+        SELECT id, team_id FROM draft_flowcharts
+        WHERE team_id IS NOT NULL
+          AND team_id IN (SELECT id FROM enemy_teams);
+
+        CREATE TABLE draft_flowcharts_rebuilt (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          data TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        INSERT INTO draft_flowcharts_rebuilt (id, user_id, name, data, created_at, updated_at)
+        SELECT id, user_id, name, data, created_at, updated_at FROM draft_flowcharts;
+
+        DROP TABLE draft_flowcharts;
+        ALTER TABLE draft_flowcharts_rebuilt RENAME TO draft_flowcharts;
+      `);
+    })();
+    const check = db.pragma('foreign_key_check');
+    if (check.length) {
+      throw new Error(`foreign_key_check failed after migration: ${JSON.stringify(check)}`);
+    }
+    console.log('draft_flowcharts migration complete');
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+}
 
 // Add logo column to enemy_teams
 try {
@@ -337,6 +391,11 @@ try {
 } catch (e) {}
 try {
   db.exec(`ALTER TABLE enemy_teams ADD COLUMN sort_order INTEGER DEFAULT 0`);
+} catch (e) {}
+
+// Saved op.gg link for the team (multi-search, team page, whatever the scout uses)
+try {
+  db.exec(`ALTER TABLE enemy_teams ADD COLUMN opgg_url TEXT`);
 } catch (e) {}
 
 console.log('Database initialized successfully');

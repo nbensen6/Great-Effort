@@ -587,26 +587,93 @@ router.delete('/drafts/:id', authenticateToken, (req, res) => {
 
 // ============= DRAFT FLOWCHARTS =============
 
-// Get all flowcharts for a team
-router.get('/teams/:teamId/flowcharts', authenticateToken, (req, res) => {
+// A flowchart always travels with the list of teams it is attached to, so the
+// UI can show "used against X, Y" without a second round trip.
+const selectFlowchart = db.prepare(`
+  SELECT df.*, u.username as author_name
+  FROM draft_flowcharts df
+  LEFT JOIN users u ON df.user_id = u.id
+  WHERE df.id = ?
+`);
+
+const selectFlowchartTeams = db.prepare(`
+  SELECT et.id, et.name, et.logo_filename
+  FROM flowchart_teams ft
+  JOIN enemy_teams et ON et.id = ft.team_id
+  WHERE ft.flowchart_id = ?
+  ORDER BY et.sort_order ASC, et.name ASC
+`);
+
+const withTeams = (flowchart) => {
+  if (!flowchart) return flowchart;
+  return { ...flowchart, teams: selectFlowchartTeams.all(flowchart.id) };
+};
+
+// Get the whole flowchart library, newest edit first
+router.get('/flowcharts', authenticateToken, (req, res) => {
   try {
-    const { teamId } = req.params;
     const flowcharts = db.prepare(`
       SELECT df.*, u.username as author_name
       FROM draft_flowcharts df
       LEFT JOIN users u ON df.user_id = u.id
-      WHERE df.team_id = ?
       ORDER BY df.updated_at DESC
-    `).all(teamId);
+    `).all();
 
-    res.json(flowcharts);
+    res.json(flowcharts.map(withTeams));
   } catch (error) {
     console.error('Error fetching flowcharts:', error);
     res.status(500).json({ error: 'Failed to fetch flowcharts' });
   }
 });
 
-// Create flowchart for a team
+// Create a standalone flowchart, optionally attached to teams straight away
+router.post('/flowcharts', authenticateToken, (req, res) => {
+  try {
+    const { name, data, teamIds } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Flowchart name is required' });
+    }
+
+    const result = db.prepare(`
+      INSERT INTO draft_flowcharts (user_id, name, data)
+      VALUES (?, ?, ?)
+    `).run(req.user.id, name, JSON.stringify(data || { nodes: [], edges: [] }));
+
+    const flowchartId = result.lastInsertRowid;
+    if (Array.isArray(teamIds) && teamIds.length) {
+      const attach = db.prepare('INSERT OR IGNORE INTO flowchart_teams (flowchart_id, team_id) VALUES (?, ?)');
+      db.transaction((ids) => ids.forEach(id => attach.run(flowchartId, id)))(teamIds);
+    }
+
+    res.status(201).json(withTeams(selectFlowchart.get(flowchartId)));
+  } catch (error) {
+    console.error('Error creating flowchart:', error);
+    res.status(500).json({ error: 'Failed to create flowchart' });
+  }
+});
+
+// Get the flowcharts attached to a team
+router.get('/teams/:teamId/flowcharts', authenticateToken, (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const flowcharts = db.prepare(`
+      SELECT df.*, u.username as author_name
+      FROM draft_flowcharts df
+      JOIN flowchart_teams ft ON ft.flowchart_id = df.id
+      LEFT JOIN users u ON df.user_id = u.id
+      WHERE ft.team_id = ?
+      ORDER BY df.updated_at DESC
+    `).all(teamId);
+
+    res.json(flowcharts.map(withTeams));
+  } catch (error) {
+    console.error('Error fetching flowcharts:', error);
+    res.status(500).json({ error: 'Failed to fetch flowcharts' });
+  }
+});
+
+// Create a flowchart already attached to one team
 router.post('/teams/:teamId/flowcharts', authenticateToken, (req, res) => {
   try {
     const { teamId } = req.params;
@@ -616,24 +683,68 @@ router.post('/teams/:teamId/flowcharts', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'Flowchart name is required' });
     }
 
-    const result = db.prepare(`
-      INSERT INTO draft_flowcharts (team_id, user_id, name, data)
-      VALUES (?, ?, ?, ?)
-    `).run(teamId, req.user.id, name, JSON.stringify(data || { nodes: [], edges: [] }));
+    const team = db.prepare('SELECT id FROM enemy_teams WHERE id = ?').get(teamId);
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
 
-    db.prepare('UPDATE enemy_teams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(teamId);
+    const flowchartId = db.transaction(() => {
+      const result = db.prepare(`
+        INSERT INTO draft_flowcharts (user_id, name, data)
+        VALUES (?, ?, ?)
+      `).run(req.user.id, name, JSON.stringify(data || { nodes: [], edges: [] }));
 
-    const flowchart = db.prepare(`
-      SELECT df.*, u.username as author_name
-      FROM draft_flowcharts df
-      LEFT JOIN users u ON df.user_id = u.id
-      WHERE df.id = ?
-    `).get(result.lastInsertRowid);
+      db.prepare('INSERT OR IGNORE INTO flowchart_teams (flowchart_id, team_id) VALUES (?, ?)')
+        .run(result.lastInsertRowid, teamId);
+      db.prepare('UPDATE enemy_teams SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(teamId);
 
-    res.status(201).json(flowchart);
+      return result.lastInsertRowid;
+    })();
+
+    res.status(201).json(withTeams(selectFlowchart.get(flowchartId)));
   } catch (error) {
     console.error('Error creating flowchart:', error);
     res.status(500).json({ error: 'Failed to create flowchart' });
+  }
+});
+
+// Attach an existing flowchart to a team (the "import" action)
+router.post('/teams/:teamId/flowcharts/:flowchartId', authenticateToken, (req, res) => {
+  try {
+    const { teamId, flowchartId } = req.params;
+
+    const team = db.prepare('SELECT id FROM enemy_teams WHERE id = ?').get(teamId);
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
+    }
+    const flowchart = selectFlowchart.get(flowchartId);
+    if (!flowchart) {
+      return res.status(404).json({ error: 'Flowchart not found' });
+    }
+
+    db.prepare('INSERT OR IGNORE INTO flowchart_teams (flowchart_id, team_id) VALUES (?, ?)')
+      .run(flowchartId, teamId);
+
+    res.json(withTeams(flowchart));
+  } catch (error) {
+    console.error('Error attaching flowchart:', error);
+    res.status(500).json({ error: 'Failed to attach flowchart' });
+  }
+});
+
+// Detach a flowchart from a team. The flowchart itself is untouched.
+router.delete('/teams/:teamId/flowcharts/:flowchartId', authenticateToken, (req, res) => {
+  try {
+    const { teamId, flowchartId } = req.params;
+
+    db.prepare('DELETE FROM flowchart_teams WHERE flowchart_id = ? AND team_id = ?')
+      .run(flowchartId, teamId);
+
+    const flowchart = selectFlowchart.get(flowchartId);
+    res.json(flowchart ? withTeams(flowchart) : { success: true });
+  } catch (error) {
+    console.error('Error detaching flowchart:', error);
+    res.status(500).json({ error: 'Failed to detach flowchart' });
   }
 });
 
@@ -658,14 +769,7 @@ router.put('/flowcharts/:id', authenticateToken, (req, res) => {
       id
     );
 
-    const updated = db.prepare(`
-      SELECT df.*, u.username as author_name
-      FROM draft_flowcharts df
-      LEFT JOIN users u ON df.user_id = u.id
-      WHERE df.id = ?
-    `).get(id);
-
-    res.json(updated);
+    res.json(withTeams(selectFlowchart.get(id)));
   } catch (error) {
     console.error('Error updating flowchart:', error);
     res.status(500).json({ error: 'Failed to update flowchart' });
