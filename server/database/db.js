@@ -398,6 +398,18 @@ try {
   db.exec(`ALTER TABLE enemy_teams ADD COLUMN opgg_url TEXT`);
 } catch (e) {}
 
+// Current-season ranked solo record and champion mastery, both already
+// fetched at import time but previously discarded.
+try {
+  db.exec(`ALTER TABLE enemy_players ADD COLUMN rank_wins INTEGER`);
+} catch (e) {}
+try {
+  db.exec(`ALTER TABLE enemy_players ADD COLUMN rank_losses INTEGER`);
+} catch (e) {}
+try {
+  db.exec(`ALTER TABLE enemy_players ADD COLUMN champion_mastery TEXT`);
+} catch (e) {}
+
 console.log('Database initialized successfully');
 
 module.exports = db;

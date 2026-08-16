@@ -155,6 +155,30 @@ const riotRoleMap = {
   'BOTTOM': 'ADC', 'UTILITY': 'Support'
 };
 
+// Champion mastery returns numeric championId, not a name, and Riot has no
+// id->name endpoint. Data Dragon does (champion.key is the id as a string),
+// and it's a static CDN, so this is cached module-wide rather than fetched
+// per player.
+const CHAMPION_MAP_TTL_MS = 6 * 60 * 60 * 1000;
+let championIdCache = { map: null, fetchedAt: 0 };
+
+async function getChampionIdMap() {
+  if (championIdCache.map && (Date.now() - championIdCache.fetchedAt) < CHAMPION_MAP_TTL_MS) {
+    return championIdCache.map;
+  }
+  const ddragonOpts = { signal: AbortSignal.timeout(RIOT_REQUEST_TIMEOUT_MS) };
+  const versions = await fetch('https://ddragon.leagueoflegends.com/api/versions.json', ddragonOpts).then(r => r.json());
+  const latest = versions[0];
+  const champData = await fetch(`https://ddragon.leagueoflegends.com/cdn/${latest}/data/en_US/champion.json`, ddragonOpts).then(r => r.json());
+
+  const map = {};
+  for (const champ of Object.values(champData.data)) {
+    map[champ.key] = champ.id;
+  }
+  championIdCache = { map, fetchedAt: Date.now() };
+  return map;
+}
+
 // Import players from op.gg multi-search data
 router.post('/import-opgg', authenticateToken, async (req, res) => {
   try {
@@ -178,6 +202,9 @@ router.post('/import-opgg', authenticateToken, async (req, res) => {
 
     const delay = (ms) => new Promise(r => setTimeout(r, ms));
     const results = [];
+    // Not a Riot call, so it doesn't compete with the per-player rate limiting
+    // below; fetch it once up front for the whole import.
+    const championIdMap = await getChampionIdMap().catch(() => ({}));
 
     for (let pi = 0; pi < Math.min(players.length, 10); pi++) {
       const player = players[pi];
@@ -217,9 +244,30 @@ router.post('/import-opgg', authenticateToken, async (req, res) => {
             result.rankTier = soloQueue.tier;
             result.rankDivision = soloQueue.rank;
             result.rankLp = soloQueue.leaguePoints;
+            // This season's ranked solo record only — Riot's API has no
+            // career-long or past-season totals, so there's no equivalent of
+            // op.gg's all-time W/L or its per-season history table.
+            result.rankWins = soloQueue.wins;
+            result.rankLosses = soloQueue.losses;
           }
         } catch (e) {
           console.log(`Could not fetch ranked data for ${player.gameName}`);
+        }
+        await delay(300);
+
+        // Step 3b: Champion mastery — separate signal from recent-match stats
+        // below; this reflects lifetime investment in a champion, not recent form.
+        try {
+          const masteryData = await riotFetch(
+            `https://${riotRegion}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/${accountData.puuid}/top?count=5`
+          );
+          result.championMastery = masteryData.map(m => ({
+            championName: championIdMap[String(m.championId)] || null,
+            championLevel: m.championLevel,
+            championPoints: m.championPoints
+          })).filter(m => m.championName);
+        } catch (e) {
+          console.log(`Could not fetch champion mastery for ${player.gameName}`);
         }
         await delay(300);
 
@@ -242,10 +290,17 @@ router.post('/import-opgg', authenticateToken, async (req, res) => {
               if (participant) {
                 const champName = participant.championName;
                 if (!championStats[champName]) {
-                  championStats[champName] = { championName: champName, games: 0, wins: 0 };
+                  championStats[champName] = { championName: champName, games: 0, wins: 0, kills: 0, deaths: 0, assists: 0, cs: 0 };
                 }
-                championStats[champName].games++;
-                if (participant.win) championStats[champName].wins++;
+                const stats = championStats[champName];
+                stats.games++;
+                if (participant.win) stats.wins++;
+                // Already present on the participant object fetched above, so
+                // this costs no extra Riot calls beyond what win-rate already needed.
+                stats.kills += participant.kills;
+                stats.deaths += participant.deaths;
+                stats.assists += participant.assists;
+                stats.cs += (participant.totalMinionsKilled || 0) + (participant.neutralMinionsKilled || 0);
 
                 const role = participant.teamPosition;
                 if (role) {
@@ -261,11 +316,28 @@ router.post('/import-opgg', authenticateToken, async (req, res) => {
           console.log(`Could not fetch match history for ${player.gameName}`);
         }
 
-        // Calculate top champions
+        // Calculate top champions, from the same sample used for win rate
         result.topChampions = Object.values(championStats)
-          .map(c => ({ ...c, winRate: c.games > 0 ? Math.round((c.wins / c.games) * 100) : 0 }))
+          .map(c => {
+            const avgKills = c.games ? c.kills / c.games : 0;
+            const avgDeaths = c.games ? c.deaths / c.games : 0;
+            const avgAssists = c.games ? c.assists / c.games : 0;
+            return {
+              championName: c.championName,
+              games: c.games,
+              wins: c.wins,
+              winRate: c.games > 0 ? Math.round((c.wins / c.games) * 100) : 0,
+              avgKills: Math.round(avgKills * 10) / 10,
+              avgDeaths: Math.round(avgDeaths * 10) / 10,
+              avgAssists: Math.round(avgAssists * 10) / 10,
+              // Deathless average is undefined; report the KA sum on its own
+              // rather than dividing by zero.
+              kda: avgDeaths > 0 ? Math.round(((avgKills + avgAssists) / avgDeaths) * 100) / 100 : null,
+              avgCs: c.games ? Math.round(c.cs / c.games) : 0
+            };
+          })
           .sort((a, b) => b.games - a.games)
-          .slice(0, 3);
+          .slice(0, 5);
 
         // Detect role from most common position
         const topRole = Object.entries(roleCounts).sort((a, b) => b[1] - a[1])[0];

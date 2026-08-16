@@ -406,8 +406,11 @@ function Scouting() {
           rankTier: r.rankTier,
           rankDivision: r.rankDivision,
           rankLp: r.rankLp,
+          rankWins: r.rankWins,
+          rankLosses: r.rankLosses,
           profileIconId: r.profileIconId,
           topChampions: r.topChampions,
+          championMastery: r.championMastery,
           detectedRole: r.detectedRole
         }))
       });
@@ -980,9 +983,15 @@ function Scouting() {
                   <div className="enemy-players-grid">
                     {teamPlayers.map(player => {
                       const topChamps = player.top_champions ? JSON.parse(player.top_champions) : [];
+                      const mastery = player.champion_mastery ? JSON.parse(player.champion_mastery) : [];
                       const rankDisplay = player.rank_tier
                         ? `${player.rank_tier} ${player.rank_division}${player.rank_lp != null ? ` (${player.rank_lp} LP)` : ''}`
                         : 'Unranked';
+                      // Current season's ranked solo record only — Riot's API has no
+                      // career-long totals or past-season history to draw on.
+                      const record = (player.rank_wins != null && player.rank_losses != null)
+                        ? ` · ${player.rank_wins}W ${player.rank_losses}L (${Math.round((player.rank_wins / (player.rank_wins + player.rank_losses || 1)) * 100)}%)`
+                        : '';
 
                       return (
                         <div key={player.id} className="enemy-player-card">
@@ -997,7 +1006,7 @@ function Scouting() {
                             <div className="player-info">
                               <div className="player-name">{player.game_name}<span className="player-tag">#{player.tag_line}</span></div>
                               <div className="player-rank">
-                                {rankDisplay}
+                                {rankDisplay}{record}
                                 {' '}
                                 <a
                                   href={`https://www.op.gg/summoners/${player.region || 'na'}/${encodeURIComponent(player.game_name)}-${encodeURIComponent(player.tag_line)}`}
@@ -1037,16 +1046,55 @@ function Scouting() {
                             </div>
 
                             {topChamps.length > 0 && (
-                              <div className="player-champs">
-                                {topChamps.map((c, i) => (
-                                  <div key={i} className="player-champ" title={`${c.championName} - ${c.games}G ${c.winRate}% WR`}>
-                                    <img
-                                      src={`https://ddragon.leagueoflegends.com/cdn/${version}/img/champion/${c.championName}.png`}
-                                      alt={c.championName}
-                                    />
-                                    <span className="champ-stat">{c.games}G {c.winRate}%</span>
-                                  </div>
-                                ))}
+                              <div>
+                                <label style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                                  Recent form (last {topChamps.reduce((sum, c) => sum + c.games, 0)} ranked games)
+                                </label>
+                                <div className="player-champs">
+                                  {topChamps.map((c, i) => (
+                                    <div
+                                      key={i}
+                                      className="player-champ"
+                                      title={`${c.championName} — ${c.games}G ${c.winRate}% WR, ${c.avgKills}/${c.avgDeaths}/${c.avgAssists}${c.kda != null ? ` (${c.kda} KDA)` : ''}, ${c.avgCs} CS/game`}
+                                    >
+                                      <img
+                                        src={`https://ddragon.leagueoflegends.com/cdn/${version}/img/champion/${c.championName}.png`}
+                                        alt={c.championName}
+                                      />
+                                      <span className="champ-stat">{c.games}G {c.winRate}%</span>
+                                      {c.avgKills != null && (
+                                        <span className="champ-stat" style={{fontSize: '0.65rem'}}>
+                                          {c.avgKills}/{c.avgDeaths}/{c.avgAssists} · {c.avgCs} CS
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {mastery.length > 0 && (
+                              <div style={{marginTop: '0.5rem'}}>
+                                <label style={{fontSize: '0.75rem', color: 'var(--text-secondary)'}}>
+                                  Champion mastery
+                                </label>
+                                <div className="player-champs">
+                                  {mastery.map((m, i) => (
+                                    <div
+                                      key={i}
+                                      className="player-champ"
+                                      title={`${m.championName} — Mastery ${m.championLevel}, ${m.championPoints.toLocaleString()} points`}
+                                    >
+                                      <img
+                                        src={`https://ddragon.leagueoflegends.com/cdn/${version}/img/champion/${m.championName}.png`}
+                                        alt={m.championName}
+                                      />
+                                      <span className="champ-stat">
+                                        M{m.championLevel} · {m.championPoints >= 1000 ? `${Math.round(m.championPoints / 1000)}k` : m.championPoints}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                           </div>

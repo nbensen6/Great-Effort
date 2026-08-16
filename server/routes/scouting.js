@@ -444,8 +444,8 @@ router.post('/teams/:teamId/players', authenticateToken, (req, res) => {
     db.prepare('DELETE FROM enemy_players WHERE team_id = ?').run(teamId);
 
     const insert = db.prepare(`
-      INSERT INTO enemy_players (team_id, game_name, tag_line, region, puuid, role, rank_tier, rank_division, rank_lp, profile_icon_id, top_champions, detected_role, last_fetched)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO enemy_players (team_id, game_name, tag_line, region, puuid, role, rank_tier, rank_division, rank_lp, rank_wins, rank_losses, profile_icon_id, top_champions, champion_mastery, detected_role, last_fetched)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `);
 
     const insertMany = db.transaction((players) => {
@@ -460,8 +460,11 @@ router.post('/teams/:teamId/players', authenticateToken, (req, res) => {
           p.rankTier || null,
           p.rankDivision || null,
           p.rankLp || null,
+          p.rankWins ?? null,
+          p.rankLosses ?? null,
           p.profileIconId || null,
           p.topChampions ? JSON.stringify(p.topChampions) : null,
+          p.championMastery ? JSON.stringify(p.championMastery) : null,
           p.detectedRole || null
         );
       }
