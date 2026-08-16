@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useConfirm } from '../hooks/useConfirm';
@@ -42,6 +43,17 @@ function Scouting() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
 
+  // op.gg tab state
+  const [opggLinkInput, setOpggLinkInput] = useState('');
+  const [savingLink, setSavingLink] = useState(false);
+  const [linkError, setLinkError] = useState('');
+
+  // Flowcharts tab state
+  const [teamFlowcharts, setTeamFlowcharts] = useState([]);
+  const [flowchartLibrary, setFlowchartLibrary] = useState([]);
+  const [importFlowchartId, setImportFlowchartId] = useState('');
+  const [attaching, setAttaching] = useState(false);
+
 
   useEffect(() => {
     fetchTeams();
@@ -71,16 +83,21 @@ function Scouting() {
 
   const fetchTeamData = useCallback(async (teamId) => {
     try {
-      const [notesRes, imagesRes, draftsRes, playersRes] = await Promise.all([
+      const [notesRes, imagesRes, draftsRes, playersRes, flowchartsRes, libraryRes] = await Promise.all([
         api.get(`/scouting/teams/${teamId}/notes`),
         api.get(`/scouting/teams/${teamId}/images`),
         api.get(`/scouting/teams/${teamId}/drafts`),
-        api.get(`/scouting/teams/${teamId}/players`)
+        api.get(`/scouting/teams/${teamId}/players`),
+        api.get(`/scouting/teams/${teamId}/flowcharts`),
+        api.get('/scouting/flowcharts')
       ]);
       setTeamNotes(notesRes.data);
       setTeamImages(imagesRes.data);
       setTeamDrafts(draftsRes.data);
       setTeamPlayers(playersRes.data);
+      setTeamFlowcharts(flowchartsRes.data);
+      setFlowchartLibrary(libraryRes.data);
+      setImportFlowchartId('');
     } catch (err) {
       setError('Failed to load team data');
     }
@@ -91,6 +108,15 @@ function Scouting() {
       fetchTeamData(selectedTeam.id);
     }
   }, [selectedTeam, fetchTeamData]);
+
+  // Keyed on the id, not the whole team, so saving the link doesn't stomp the
+  // field the user is still typing in.
+  const selectedTeamId = selectedTeam?.id;
+  useEffect(() => {
+    setOpggLinkInput(selectedTeam?.opgg_url || '');
+    setLinkError('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTeamId]);
 
   const handleSelectTeam = (team) => {
     setSelectedTeam(team);
@@ -178,10 +204,10 @@ function Scouting() {
   };
 
   const handleDeleteTeam = async (teamId) => {
-    const confirmed = await confirm('Delete this team and all its notes/images?', {
-      title: 'Delete Team',
-      confirmText: 'Delete'
-    });
+    const confirmed = await confirm(
+      'Delete this team and all its notes, images, players and saved drafts? Flowcharts are kept in your library.',
+      { title: 'Delete Team', confirmText: 'Delete' }
+    );
     if (!confirmed) return;
 
     try {
@@ -400,6 +426,86 @@ function Scouting() {
     }
   };
 
+  // Only http(s) is safe to hand to an anchor href; the server enforces the
+  // same rule on save, this guards links already in the database.
+  const safeHref = (url) => {
+    if (!url) return null;
+    try {
+      const { protocol } = new URL(url);
+      return (protocol === 'http:' || protocol === 'https:') ? url : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const saveOpggLink = async (url) => {
+    setSavingLink(true);
+    setLinkError('');
+
+    try {
+      const res = await api.patch(`/scouting/teams/${selectedTeam.id}/opgg`, { opggUrl: url });
+      setTeams(prev => prev.map(t => t.id === res.data.id ? { ...t, opgg_url: res.data.opgg_url } : t));
+      setSelectedTeam(prev => ({ ...prev, opgg_url: res.data.opgg_url }));
+      setOpggLinkInput(res.data.opgg_url || '');
+    } catch (err) {
+      setLinkError(err?.response?.data?.error || 'Failed to save link');
+    } finally {
+      setSavingLink(false);
+    }
+  };
+
+  const handleSaveOpggLink = () => {
+    const trimmed = opggLinkInput.trim();
+    if (!trimmed) {
+      setLinkError('Paste a link first');
+      return;
+    }
+    saveOpggLink(trimmed);
+  };
+
+  const handleClearOpggLink = async () => {
+    const confirmed = await confirm('Remove the saved op.gg link for this team?', {
+      title: 'Remove Link',
+      confirmText: 'Remove'
+    });
+    if (!confirmed) return;
+    saveOpggLink('');
+  };
+
+  const handleAttachFlowchart = async () => {
+    if (!importFlowchartId) return;
+    setAttaching(true);
+    try {
+      const res = await api.post(`/scouting/teams/${selectedTeam.id}/flowcharts/${importFlowchartId}`);
+      setTeamFlowcharts(prev => [res.data, ...prev]);
+      setFlowchartLibrary(prev => prev.map(f => f.id === res.data.id ? res.data : f));
+      setImportFlowchartId('');
+    } catch (err) {
+      setError(err?.response?.data?.error || 'Failed to import flowchart');
+    } finally {
+      setAttaching(false);
+    }
+  };
+
+  // Detach only unlinks it from this team. The flowchart stays in the library.
+  const handleDetachFlowchart = async (flowchartId) => {
+    const confirmed = await confirm(
+      'Remove this flowchart from this team? It stays in your flowchart library.',
+      { title: 'Remove From Team', confirmText: 'Remove' }
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await api.delete(`/scouting/teams/${selectedTeam.id}/flowcharts/${flowchartId}`);
+      setTeamFlowcharts(prev => prev.filter(f => f.id !== flowchartId));
+      if (res.data?.id) {
+        setFlowchartLibrary(prev => prev.map(f => f.id === res.data.id ? res.data : f));
+      }
+    } catch (err) {
+      setError('Failed to remove flowchart from team');
+    }
+  };
+
   const handleUpdatePlayerRole = async (playerId, role) => {
     try {
       const res = await api.patch(`/scouting/players/${playerId}/role`, { role });
@@ -560,6 +666,18 @@ function Scouting() {
                 Players ({teamPlayers.length})
               </button>
               <button
+                className={`team-tab ${activeTab === 'flowcharts' ? 'active' : ''}`}
+                onClick={() => setActiveTab('flowcharts')}
+              >
+                Flowcharts ({teamFlowcharts.length})
+              </button>
+              <button
+                className={`team-tab ${activeTab === 'opgg' ? 'active' : ''}`}
+                onClick={() => setActiveTab('opgg')}
+              >
+                op.gg {selectedTeam.opgg_url ? '✓' : ''}
+              </button>
+              <button
                 className={`team-tab ${activeTab === 'drafts' ? 'active' : ''}`}
                 onClick={() => setActiveTab('drafts')}
               >
@@ -578,6 +696,160 @@ function Scouting() {
                 Notes ({teamNotes.length})
               </button>
             </div>
+
+            {activeTab === 'flowcharts' && (() => {
+              const attachedIds = new Set(teamFlowcharts.map(f => f.id));
+              const importable = flowchartLibrary.filter(f => !attachedIds.has(f.id));
+
+              return (
+                <div className="flowcharts-tab">
+                  <div className="import-section">
+                    <label style={{fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block'}}>
+                      Import a flowchart from your library. The same flowchart can be used against
+                      any number of teams — edits show up everywhere it's attached.
+                    </label>
+                    <div style={{display: 'flex', gap: '0.5rem'}}>
+                      <select
+                        value={importFlowchartId}
+                        onChange={(e) => setImportFlowchartId(e.target.value)}
+                        disabled={attaching || importable.length === 0}
+                        style={{
+                          flex: 1,
+                          padding: '0.5rem',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-tertiary)',
+                          color: 'var(--text-primary)'
+                        }}
+                      >
+                        <option value="">
+                          {importable.length === 0 ? 'Nothing left to import' : 'Choose a flowchart...'}
+                        </option>
+                        {importable.map(f => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}{f.teams?.length ? ` (also on ${f.teams.map(t => t.name).join(', ')})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleAttachFlowchart}
+                        disabled={attaching || !importFlowchartId}
+                      >
+                        {attaching ? 'Importing...' : 'Import'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {teamFlowcharts.length === 0 ? (
+                    <p style={{color: 'var(--text-secondary)', marginTop: '1rem'}}>
+                      No flowcharts on this team yet. Import one above, or build a new one on the{' '}
+                      <Link to="/flowcharts" style={{color: 'var(--accent-blue)'}}>Flowcharts page</Link>.
+                    </p>
+                  ) : (
+                    <div className="attached-flowcharts-list" style={{marginTop: '1rem'}}>
+                      {teamFlowcharts.map(fc => {
+                        let nodeCount = null;
+                        try {
+                          nodeCount = JSON.parse(fc.data)?.nodes?.length ?? null;
+                        } catch {
+                          nodeCount = null;
+                        }
+                        const alsoOn = (fc.teams || []).filter(t => t.id !== selectedTeam.id);
+
+                        return (
+                          <div key={fc.id} className="card mb-2">
+                            <div className="card-header">
+                              <div>
+                                <h4 style={{color: 'var(--accent-gold)'}}>{fc.name}</h4>
+                                <small style={{color: 'var(--text-secondary)'}}>
+                                  {nodeCount != null ? `${nodeCount} nodes | ` : ''}
+                                  updated {formatDate(fc.updated_at)} by {fc.author_name}
+                                  {alsoOn.length ? ` | also on ${alsoOn.map(t => t.name).join(', ')}` : ''}
+                                </small>
+                              </div>
+                              <div style={{display: 'flex', gap: '0.5rem'}}>
+                                <Link to="/flowcharts" className="btn btn-secondary btn-small">
+                                  Open
+                                </Link>
+                                <button
+                                  className="btn btn-danger btn-small"
+                                  onClick={() => handleDetachFlowchart(fc.id)}
+                                  title="Unlink from this team (keeps the flowchart)"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {activeTab === 'opgg' && (
+              <div className="opgg-tab">
+                <label style={{fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'block'}}>
+                  Saved op.gg link for {selectedTeam.name} — multi-search, team page, whatever you use
+                </label>
+                <div style={{display: 'flex', gap: '0.5rem'}}>
+                  <input
+                    type="text"
+                    value={opggLinkInput}
+                    onChange={(e) => setOpggLinkInput(e.target.value)}
+                    placeholder="https://www.op.gg/multisearch/na?summoners=..."
+                    disabled={savingLink}
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-tertiary)',
+                      color: 'var(--text-primary)'
+                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveOpggLink()}
+                  />
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleSaveOpggLink}
+                    disabled={savingLink}
+                  >
+                    {savingLink ? 'Saving...' : 'Save'}
+                  </button>
+                  {selectedTeam.opgg_url && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={handleClearOpggLink}
+                      disabled={savingLink}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {linkError && <div className="error" style={{marginTop: '0.5rem'}}>{linkError}</div>}
+
+                {safeHref(selectedTeam.opgg_url) ? (
+                  <div style={{marginTop: '1rem'}}>
+                    <a
+                      href={safeHref(selectedTeam.opgg_url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="opgg-team-link"
+                    >
+                      Open {selectedTeam.name} on op.gg →
+                    </a>
+                  </div>
+                ) : (
+                  <p style={{color: 'var(--text-secondary)', marginTop: '1rem', fontSize: '0.9rem'}}>
+                    No link saved yet. Paste one above and hit Save.
+                  </p>
+                )}
+              </div>
+            )}
 
             {activeTab === 'images' && (
               <div className="images-tab">

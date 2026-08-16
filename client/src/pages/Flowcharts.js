@@ -6,9 +6,10 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { useConfirm } from '../hooks/useConfirm';
 import { toChampionList } from '../lib/champions';
 
-// Draft flowcharts used to live inside a tab on the Scouting page. They are
-// still stored per enemy team (draft_flowcharts.team_id), so this page keeps a
-// team selector rather than inventing a new scope for them.
+// Flowcharts are standalone documents held in a library. The team selector is a
+// filter, not an owner: picking a team narrows the list to the ones attached to
+// it, and the empty value shows everything. Attaching happens on the Scouting
+// page; deleting a team only drops the link.
 function Flowcharts() {
   const [teams, setTeams] = useState([]);
   const [selectedTeamId, setSelectedTeamId] = useState('');
@@ -32,7 +33,6 @@ function Flowcharts() {
           fetch('https://ddragon.leagueoflegends.com/api/versions.json').then(r => r.json())
         ]);
         setTeams(teamsRes.data);
-        if (teamsRes.data.length) setSelectedTeamId(String(teamsRes.data[0].id));
 
         const latest = versionsRes[0];
         setVersion(latest);
@@ -49,8 +49,18 @@ function Flowcharts() {
   }, []);
 
   const fetchTeamData = useCallback(async (teamId) => {
-    if (!teamId) return;
     try {
+      // No team picked: show the whole library. Drafts and enemy players are
+      // opponent-specific, so those panels stay empty until one is selected.
+      if (!teamId) {
+        const fcRes = await api.get('/scouting/flowcharts');
+        setFlowcharts(fcRes.data);
+        setDrafts([]);
+        setEnemyPlayers([]);
+        setEditingFlowchart(null);
+        return;
+      }
+
       const [fcRes, draftsRes, playersRes] = await Promise.all([
         api.get(`/scouting/teams/${teamId}/flowcharts`),
         api.get(`/scouting/teams/${teamId}/drafts`),
@@ -61,7 +71,7 @@ function Flowcharts() {
       setEnemyPlayers(playersRes.data);
       setEditingFlowchart(null);
     } catch (err) {
-      setError('Failed to load team flowcharts');
+      setError('Failed to load flowcharts');
     }
   }, []);
 
@@ -74,7 +84,11 @@ function Flowcharts() {
         setFlowcharts(prev => prev.map(f => (f.id === fcId ? response.data : f)));
         return response.data;
       }
-      const response = await api.post(`/scouting/teams/${selectedTeamId}/flowcharts`, payload);
+      // With a team filtered, a new flowchart is attached to it on creation;
+      // from the library view it starts unattached.
+      const response = selectedTeamId
+        ? await api.post(`/scouting/teams/${selectedTeamId}/flowcharts`, payload)
+        : await api.post('/scouting/flowcharts', payload);
       setFlowcharts(prev => [response.data, ...prev]);
       return response.data;
     } catch (err) {
@@ -109,6 +123,7 @@ function Flowcharts() {
             value={selectedTeamId}
             onChange={(e) => setSelectedTeamId(e.target.value)}
           >
+            <option value="">All flowcharts</option>
             {teams.map(t => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
@@ -118,15 +133,9 @@ function Flowcharts() {
 
       {error && <div className="error-message">{error}</div>}
 
-      {teams.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-secondary)' }}>
-          <h3>No enemy teams yet</h3>
-          <p>Flowcharts are planned against a specific opponent. Add a team on the Scouting page first.</p>
-        </div>
-      ) : (
-        <div className="fc-page">
+      <div className="fc-page">
         <FlowchartCanvas
-          key={selectedTeamId}
+          key={selectedTeamId || 'library'}
           teamId={selectedTeam?.id}
           flowcharts={flowcharts}
           drafts={drafts}
@@ -138,8 +147,7 @@ function Flowcharts() {
           onDelete={handleDeleteFlowchart}
           onClose={() => fetchTeamData(selectedTeamId)}
         />
-        </div>
-      )}
+      </div>
 
       <ConfirmDialog {...confirmDialogProps} />
     </PageBackground>
