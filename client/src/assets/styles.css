@@ -3385,6 +3385,36 @@ tr:hover {
   color: var(--accent-gold);
 }
 
+.fc-thumb-link {
+  display: block;
+  margin-bottom: 0.75rem;
+  transition: border-color 0.15s;
+}
+
+.fc-thumb {
+  display: block;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.fc-thumb-link:hover .fc-thumb {
+  border-color: var(--accent-gold);
+}
+
+.fc-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-style: italic;
+  margin-bottom: 0.75rem;
+}
+
 .fc-shape-text {
   max-width: 160px;
   overflow: hidden;

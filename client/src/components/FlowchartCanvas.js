@@ -225,6 +225,17 @@ function FlowchartCanvas({
     setSelectedNodeId(null);
   }, []);
 
+  // initialFlowchart only seeds state at mount (see the useState initializers
+  // above) — a parent passing a different flowchart after mount would
+  // otherwise be silently ignored. This is how an external "open this one"
+  // request (e.g. from the Scouting page) reaches an already-mounted canvas.
+  useEffect(() => {
+    if (initialFlowchart) {
+      loadFlowchart(initialFlowchart);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFlowchart?.id]);
+
   const handleNewFlowchart = () => {
     const startId = generateId();
     setSelectedFcId(null);

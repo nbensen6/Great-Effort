@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import ConfirmDialog from '../components/ConfirmDialog';
+import FlowchartThumbnail from '../components/FlowchartThumbnail';
 import { useConfirm } from '../hooks/useConfirm';
 
 const NOTE_CATEGORIES = ['General', 'Draft Tendencies', 'Playstyle', 'Weaknesses', 'Player Notes'];
@@ -706,6 +707,9 @@ function Scouting() {
 
                         return (
                           <div key={fc.id} className="card mb-2">
+                            <Link to={`/flowcharts?fc=${fc.id}`} className="fc-thumb-link">
+                              <FlowchartThumbnail data={fc.data} />
+                            </Link>
                             <div className="card-header">
                               <div>
                                 <h4 style={{color: 'var(--accent-gold)'}}>{fc.name}</h4>
@@ -716,7 +720,7 @@ function Scouting() {
                                 </small>
                               </div>
                               <div style={{display: 'flex', gap: '0.5rem'}}>
-                                <Link to="/flowcharts" className="btn btn-secondary btn-small">
+                                <Link to={`/flowcharts?fc=${fc.id}`} className="btn btn-secondary btn-small">
                                   Open
                                 </Link>
                                 <button

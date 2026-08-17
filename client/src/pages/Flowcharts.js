@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import PageBackground from '../components/PageBackground';
 import FlowchartCanvas from '../components/FlowchartCanvas';
@@ -22,8 +23,29 @@ function Flowcharts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const { confirm, confirmDialogProps } = useConfirm();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedFcId = searchParams.get('fc');
 
   const selectedTeam = teams.find(t => String(t.id) === String(selectedTeamId)) || null;
+
+  // A link to a specific flowchart (e.g. "Open" on the Scouting page) carries
+  // ?fc=<id>. A flowchart can be attached to zero, one, or many teams, so
+  // there's no single team it "belongs" to — always resolve it against the
+  // full library rather than whatever team filter happens to be selected.
+  useEffect(() => {
+    if (requestedFcId && selectedTeamId !== '') {
+      setSelectedTeamId('');
+    }
+  }, [requestedFcId, selectedTeamId]);
+
+  useEffect(() => {
+    if (!requestedFcId || flowcharts.length === 0) return;
+    const match = flowcharts.find(f => String(f.id) === String(requestedFcId));
+    if (match) {
+      setEditingFlowchart(match);
+      setSearchParams({}, { replace: true });
+    }
+  }, [requestedFcId, flowcharts, setSearchParams]);
 
   useEffect(() => {
     (async () => {
