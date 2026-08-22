@@ -2952,13 +2952,72 @@ tr:hover {
 
 /* On the standalone Flowcharts page the canvas is the page itself, not a modal
    floating over one, so it must not cover the header and team selector. */
+/* The Flowcharts page opts out of .page-content's reading-width cap and
+   padding (see .main-content:has(.page-background) for the same pattern one
+   level up) so the canvas can genuinely fill the viewport below the navbar,
+   not just a padded column of it. .fc-shell then splits that height between
+   a slim header and the canvas, which takes everything else. */
+.page-background:has(.fc-shell) .page-content {
+  padding: 0;
+  max-width: none;
+  height: calc(100vh - 70px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fc-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.fc-shell .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1.25rem;
+  margin: 0;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.fc-shell .page-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.fc-shell .error-message {
+  flex-shrink: 0;
+  margin: 0.5rem 1.25rem 0;
+}
+
+.fc-team-select {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.fc-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .fc-page .fc-canvas-overlay {
   position: relative;
   inset: auto;
   z-index: 1;
-  height: calc(100vh - 230px);
-  min-height: 520px;
-  border: 1px solid var(--border-color);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: none;
 }
 
 .fc-drafts-sidebar {

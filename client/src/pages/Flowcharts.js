@@ -137,38 +137,40 @@ function Flowcharts() {
 
   return (
     <PageBackground>
-      <div className="page-header">
-        <h2>Draft Flowcharts</h2>
-        {teams.length > 0 && (
-          <select
-            className="fc-team-select"
-            value={selectedTeamId}
-            onChange={(e) => setSelectedTeamId(e.target.value)}
-          >
-            <option value="">All flowcharts</option>
-            {teams.map(t => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-        )}
-      </div>
+      <div className="fc-shell">
+        <div className="page-header">
+          <h2>Draft Flowcharts</h2>
+          {teams.length > 0 && (
+            <select
+              className="fc-team-select"
+              value={selectedTeamId}
+              onChange={(e) => setSelectedTeamId(e.target.value)}
+            >
+              <option value="">All flowcharts</option>
+              {teams.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
 
-      {error && <div className="error-message">{error}</div>}
+        {error && <div className="error-message">{error}</div>}
 
-      <div className="fc-page">
-        <FlowchartCanvas
-          key={selectedTeamId || 'library'}
-          teamId={selectedTeam?.id}
-          flowcharts={flowcharts}
-          drafts={drafts}
-          initialFlowchart={editingFlowchart}
-          champions={champions}
-          version={version}
-          enemyPlayers={enemyPlayers}
-          onSave={handleSaveFlowchart}
-          onDelete={handleDeleteFlowchart}
-          onClose={() => fetchTeamData(selectedTeamId)}
-        />
+        <div className="fc-page">
+          <FlowchartCanvas
+            key={selectedTeamId || 'library'}
+            teamId={selectedTeam?.id}
+            flowcharts={flowcharts}
+            drafts={drafts}
+            initialFlowchart={editingFlowchart}
+            champions={champions}
+            version={version}
+            enemyPlayers={enemyPlayers}
+            onSave={handleSaveFlowchart}
+            onDelete={handleDeleteFlowchart}
+            onClose={() => fetchTeamData(selectedTeamId)}
+          />
+        </div>
       </div>
 
       <ConfirmDialog {...confirmDialogProps} />

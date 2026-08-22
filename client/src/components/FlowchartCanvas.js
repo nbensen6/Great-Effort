@@ -201,8 +201,9 @@ function FlowchartCanvas({
   const [contextMenu, setContextMenu] = useState(null); // { nodeId, x, y }
   const [contextSearch, setContextSearch] = useState('');
 
-  // Save feedback
-  const [saveStatus, setSaveStatus] = useState(''); // '', 'saving', 'saved', 'error'
+  // Save feedback. 'unsaved' means a debounced save is pending; 'noname'
+  // means there's nothing to autosave to yet.
+  const [saveStatus, setSaveStatus] = useState(''); // '', 'unsaved', 'saving', 'saved', 'error', 'noname'
 
   // Insert draft dropdown
   const [showDraftMenu, setShowDraftMenu] = useState(false);
@@ -214,16 +215,96 @@ function FlowchartCanvas({
   edgesRef.current = edges;
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const fcNameRef = useRef(fcName);
+  fcNameRef.current = fcName;
+  const selectedFcIdRef = useRef(selectedFcId);
+  selectedFcIdRef.current = selectedFcId;
+
+  const snapshotOf = (name, ns, es) => JSON.stringify({ name, nodes: ns, edges: es });
+
+  // What's actually persisted (or was just loaded), so the autosave effect
+  // below can tell a real edit apart from a no-op re-render. Set once, lazily,
+  // during the first render — mutating a ref during render is safe for this
+  // exact "compute once from the initial state" case.
+  const lastSavedRef = useRef(null);
+  if (lastSavedRef.current === null) {
+    lastSavedRef.current = snapshotOf(fcName, nodes, edges);
+  }
+  const saveTimerRef = useRef(null);
+
+  const doSave = useCallback(async (snapshot, nodesToSave, edgesToSave, nameToSave) => {
+    setSaveStatus('saving');
+    try {
+      const payload = { name: nameToSave, data: { nodes: nodesToSave, edges: edgesToSave } };
+      const savedFc = await onSave(selectedFcIdRef.current, payload);
+      if (savedFc && savedFc.id) {
+        if (!selectedFcIdRef.current) setSelectedFcId(savedFc.id);
+        lastSavedRef.current = snapshot;
+        setSaveStatus('saved');
+      } else {
+        setSaveStatus('error');
+      }
+    } catch (err) {
+      console.error('Flowchart autosave error:', err);
+      setSaveStatus('error');
+    }
+  }, [onSave]);
+
+  // Cancels any pending debounced save and, if there's a real unsaved edit,
+  // saves it immediately. Called before switching to a different flowchart
+  // (or a blank one) so nothing typed in the last second gets discarded, and
+  // on Close so the parent's refetch doesn't race an in-flight autosave.
+  const flushPendingSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const name = fcNameRef.current;
+    if (!name.trim()) return Promise.resolve();
+    const snap = snapshotOf(name, nodesRef.current, edgesRef.current);
+    if (snap === lastSavedRef.current) return Promise.resolve();
+    return doSave(snap, nodesRef.current, edgesRef.current, name);
+  }, [doSave]);
+
+  // Debounced autosave: any change to nodes/edges/name reschedules a save
+  // ~1.2s out, so a burst of edits (typing, dragging) collapses into one
+  // request instead of one per keystroke/mousemove.
+  useEffect(() => {
+    if (!fcName.trim()) {
+      setSaveStatus('noname');
+      return;
+    }
+    const snap = snapshotOf(fcName, nodes, edges);
+    if (snap === lastSavedRef.current) {
+      setSaveStatus(prev => (prev === 'saving' ? prev : 'saved'));
+      return;
+    }
+    setSaveStatus('unsaved');
+    saveTimerRef.current = setTimeout(() => {
+      doSave(snap, nodes, edges, fcName);
+    }, 1200);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [nodes, edges, fcName, doSave]);
 
   // Load a flowchart from the sidebar list
-  const loadFlowchart = useCallback((fc) => {
+  const loadFlowchart = useCallback(async (fc) => {
+    await flushPendingSave();
     const data = typeof fc.data === 'string' ? JSON.parse(fc.data) : fc.data;
+    const loadedNodes = autoLayout(data.nodes || [], data.edges || []).map(migrateNode);
+    const loadedEdges = data.edges || [];
     setSelectedFcId(fc.id);
     setFcName(fc.name);
-    setNodes(autoLayout(data.nodes || [], data.edges || []).map(migrateNode));
-    setEdges(data.edges || []);
+    setNodes(loadedNodes);
+    setEdges(loadedEdges);
     setSelectedNodeId(null);
-  }, []);
+    lastSavedRef.current = snapshotOf(fc.name, loadedNodes, loadedEdges);
+    setSaveStatus('saved');
+  }, [flushPendingSave]);
 
   // initialFlowchart only seeds state at mount (see the useState initializers
   // above) — a parent passing a different flowchart after mount would
@@ -236,41 +317,17 @@ function FlowchartCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialFlowchart?.id]);
 
-  const handleNewFlowchart = () => {
+  const handleNewFlowchart = async () => {
+    await flushPendingSave();
     const startId = generateId();
+    const blankNodes = [{ id: startId, type: 'start', text: 'Bans', x: 350, y: 80, width: 160, height: 100, championIds: [] }];
     setSelectedFcId(null);
     setFcName('');
-    setNodes([{ id: startId, type: 'start', text: 'Bans', x: 350, y: 80, width: 160, height: 100, championIds: [] }]);
+    setNodes(blankNodes);
     setEdges([]);
     setSelectedNodeId(null);
-  };
-
-  const handleSave = async () => {
-    if (!fcName.trim()) {
-      setSaveStatus('noname');
-      setTimeout(() => setSaveStatus(''), 4000);
-      return;
-    }
-    setSaveStatus('saving');
-    try {
-      const payload = {
-        name: fcName,
-        data: { nodes, edges }
-      };
-      const savedFc = await onSave(selectedFcId, payload);
-      if (savedFc && savedFc.id) {
-        setSelectedFcId(savedFc.id);
-        setSaveStatus('saved');
-        setTimeout(() => setSaveStatus(''), 4000);
-      } else {
-        setSaveStatus('error');
-        setTimeout(() => setSaveStatus(''), 5000);
-      }
-    } catch (err) {
-      console.error('Flowchart save error:', err);
-      setSaveStatus('error');
-      setTimeout(() => setSaveStatus(''), 5000);
-    }
+    lastSavedRef.current = snapshotOf('', blankNodes, []);
+    setSaveStatus('noname');
   };
 
   // ---- Canvas mouse handlers ----
@@ -810,13 +867,6 @@ function FlowchartCanvas({
               <button className="fc-zoom-btn" onClick={handleZoomIn} title="Zoom in">+</button>
             </div>
             <button
-              className="btn btn-primary btn-small"
-              onClick={handleSave}
-              disabled={saveStatus === 'saving'}
-            >
-              {saveStatus === 'saving' ? 'Saving...' : 'Save'}
-            </button>
-            <button
               className="btn btn-secondary btn-small"
               onClick={handleExport}
               disabled={exporting}
@@ -824,16 +874,22 @@ function FlowchartCanvas({
             >
               {exporting ? 'Exporting...' : 'Export PNG'}
             </button>
-            {saveStatus === 'saved' && (
-              <span className="fc-save-feedback success">Saved successfully!</span>
-            )}
+            <span className={`fc-save-feedback ${saveStatus === 'error' || saveStatus === 'noname' ? 'error' : ''} ${saveStatus === 'saved' ? 'success' : ''}`}>
+              {saveStatus === 'saving' && 'Saving…'}
+              {saveStatus === 'unsaved' && 'Unsaved changes…'}
+              {saveStatus === 'saved' && 'All changes saved'}
+              {saveStatus === 'error' && 'Save failed'}
+              {saveStatus === 'noname' && 'Enter a name to start saving'}
+            </span>
             {saveStatus === 'error' && (
-              <span className="fc-save-feedback error">Failed to save - check console</span>
+              <button className="btn btn-secondary btn-small" onClick={flushPendingSave}>
+                Retry
+              </button>
             )}
-            {saveStatus === 'noname' && (
-              <span className="fc-save-feedback error">Enter a name first</span>
-            )}
-            <button className="btn btn-secondary btn-small" onClick={onClose}>
+            <button
+              className="btn btn-secondary btn-small"
+              onClick={async () => { await flushPendingSave(); onClose(); }}
+            >
               Close
             </button>
           </div>
